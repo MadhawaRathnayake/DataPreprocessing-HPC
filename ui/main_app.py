@@ -19,6 +19,7 @@ from series_processing_tab import SeriesProcessingTab
 from openmp_pipeline_tab import OpenMPPipelineTab
 from mpi_pipeline_tab import MPIPipelineTab
 from cuda_pipeline_tab import CUDAPipelineTab
+from benchmark_tab import BenchmarkComparisonTab
 from export_tab import ExportTab
 
 # Get the project root directory
@@ -221,6 +222,8 @@ class DataPreprocessingApp:
         self.tabs['openmp'] = OpenMPPipelineTab(self.notebook, self)
         self.tabs['mpi']    = MPIPipelineTab(self.notebook, self)
         self.tabs['cuda']   = CUDAPipelineTab(self.notebook, self)
+        self.benchmark_tab  = BenchmarkComparisonTab(self.notebook, self)
+        self.tabs['benchmark'] = self.benchmark_tab
         self.tabs['export'] = ExportTab(self.notebook, self)
 
         # Add tabs to notebook
@@ -229,6 +232,7 @@ class DataPreprocessingApp:
         self.notebook.add(self.tabs['openmp'].get_frame(),  text="  ⚡  OpenMP Parallel  ")
         self.notebook.add(self.tabs['mpi'].get_frame(),     text="  🌐  MPI Parallel  ")
         self.notebook.add(self.tabs['cuda'].get_frame(),    text="  🚀  CUDA Parallel  ")
+        self.notebook.add(self.benchmark_tab.get_frame(),   text="  📊  Benchmark  ")
         self.notebook.add(self.tabs['export'].get_frame(),  text="  💾  Export  ")
         
     def bind_events(self):
@@ -245,7 +249,7 @@ class DataPreprocessingApp:
         current_tab_index = self.notebook.index(self.notebook.select())
         
         # Get tab names in order
-        tab_names = ['import', 'serial', 'openmp', 'mpi', 'cuda', 'export']
+        tab_names = ['import', 'serial', 'openmp', 'mpi', 'cuda', 'benchmark', 'export']
         
         if current_tab_index < len(tab_names):
             current_tab_name = tab_names[current_tab_index]

@@ -13,6 +13,7 @@ import os, csv as csv_mod, collections, time
 import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 import theme
+from preprocess import PreprocessingPipeline
 
 
 class StageApply:
@@ -165,21 +166,6 @@ class StageApply:
         self.app.root.update()
 
         try:
-            t_start = time.perf_counter()
-
-            # ── TODO: Call OpenMP C backend ───────────────────────────────────
-            # When libompanalyzer.so is fully wired, replace the Python logic
-            # below with:
-            #
-            #   if self.app.openmp_lib:
-            #       stats_ptr = self.app.openmp_lib.analyzer_omp_create_stats(num_cols)
-            #       self.app.openmp_lib.analyzer_omp_analyze_dataset(
-            #           data_ptr, headers_ptr, num_rows, num_cols, stats_ptr, num_threads)
-            #       json_bytes = self.app.openmp_lib.analyzer_omp_get_stats_json(stats_ptr)
-            #       # parse json_bytes and apply transformations
-            #       self.app.openmp_lib.analyzer_omp_free_stats(stats_ptr)
-            # ─────────────────────────────────────────────────────────────────
-
             configs = self._get_configs()
             headers = list(self.app.csv_data["headers"])
             data    = [list(row) for row in self.app.csv_data["data"]]
@@ -187,12 +173,14 @@ class StageApply:
             orig_rows = len(data)
             orig_cols = len(headers)
 
-            data, headers = self._apply_duplicates(data, headers, configs[1])
-            data, headers = self._apply_missing(data, headers, configs[2])
-            data, headers = self._apply_outliers(data, headers, configs[3])
-            data, headers = self._apply_scaling(data, headers, configs[4])
-            data, headers = self._apply_encoding(data, headers, configs[5])
-
+            # Create and run preprocessing pipeline with OpenMP backend
+            # num_threads can be configured - defaults to optimal system threads
+            import os
+            num_threads = min(os.cpu_count() or 4, 8)  # Cap at 8 for reasonable scaling
+            
+            pipeline = PreprocessingPipeline(backend_type="openmp", num_threads=num_threads)
+            t_start = time.perf_counter()
+            data, headers, stats = pipeline.run_pipeline(data, headers, configs)
             t_elapsed = time.perf_counter() - t_start
 
             self._processed_data    = data
@@ -207,6 +195,13 @@ class StageApply:
             self._refresh_preview(headers, data[:20])
             self._save_btn.configure(state="normal")
 
+            # Add metrics to benchmark comparison if available
+            if 'metrics' in stats and hasattr(self.app, 'benchmark_tab'):
+                try:
+                    self.app.benchmark_tab.add_metrics(stats['metrics'])
+                except:
+                    pass
+
             self.app.set_status(
                 f"OpenMP pipeline complete — {orig_rows - len(data)} rows removed, "
                 f"{len(headers)} columns remaining. ({t_elapsed*1000:.1f} ms)"
@@ -216,242 +211,10 @@ class StageApply:
             self.app.set_status("Pipeline error")
             import traceback; traceback.print_exc()
 
-    # ── Stage processors (identical to series, will be replaced by C calls) ──
+    # ── Stage processors (now in PreprocessingPipeline class) ──
 
-    @staticmethod
-    def _apply_duplicates(data, headers, cfg):
-        action = cfg.get("action", "skip")
-        if action == "skip":
-            return data, headers
-        keep   = cfg.get("keep", "first")
-        subset = cfg.get("col_subset", [])
-        if action == "drop_subset" and subset:
-            indices = [headers.index(c) for c in subset if c in headers]
-        else:
-            indices = list(range(len(headers)))
-        seen    = {}
-        result  = []
-        for i, row in enumerate(data):
-            key = tuple(row[j] for j in indices)
-            if key not in seen:
-                seen[key] = i
-                result.append(row)
-            else:
-                if keep == "last":
-                    result.remove(data[seen[key]])
-                    seen[key] = i
-                    result.append(row)
-                elif keep == "none":
-                    if data[seen[key]] in result:
-                        result.remove(data[seen[key]])
-        return result, headers
-
-    @staticmethod
-    def _apply_missing(data, headers, cfg):
-        mode = cfg.get("global_strategy", "skip")
-        if mode == "skip":
-            return data, headers
-        threshold = cfg.get("drop_threshold", 80)
-        total     = len(data)
-        keep_idxs = []
-        for j, col in enumerate(headers):
-            null_c = sum(1 for row in data if j >= len(row) or not row[j] or not row[j].strip())
-            pct    = (null_c / total * 100) if total else 0
-            if pct <= threshold:
-                keep_idxs.append(j)
-        data    = [[row[j] for j in keep_idxs if j < len(row)] for row in data]
-        headers = [headers[j] for j in keep_idxs]
-        if mode == "apply_all":
-            strategy_for = {col: cfg.get("global_common", "Drop row") for col in headers}
-        else:
-            col_cfg      = cfg.get("column_config", {})
-            strategy_for = {col: col_cfg.get(col, {}).get("strategy", "Drop row")
-                            for col in headers}
-        col_stats = {}
-        for j, col in enumerate(headers):
-            vals = []
-            for row in data:
-                v = row[j] if j < len(row) else ""
-                if v and v.strip():
-                    try:
-                        vals.append(float(v))
-                    except ValueError:
-                        vals.append(v)
-            numeric_vals = [v for v in vals if isinstance(v, float)]
-            str_vals     = [v for v in vals if isinstance(v, str)]
-            col_stats[col] = {
-                "mean":   sum(numeric_vals) / len(numeric_vals) if numeric_vals else 0,
-                "median": sorted(numeric_vals)[len(numeric_vals) // 2] if numeric_vals else 0,
-                "mode":   collections.Counter(str_vals or [str(v) for v in numeric_vals]).most_common(1)[0][0]
-                          if (str_vals or numeric_vals) else "",
-            }
-        result = []
-        for row in data:
-            new_row = list(row)
-            drop    = False
-            for j, col in enumerate(headers):
-                if j >= len(new_row):
-                    continue
-                val = new_row[j]
-                if not val or not val.strip():
-                    strat    = strategy_for.get(col, "Drop row")
-                    fill_val = (cfg.get("column_config", {}).get(col, {}).get("fill_val")
-                                if cfg.get("global_strategy") == "per_column" else None)
-                    if strat == "Drop row":
-                        drop = True; break
-                    elif strat == "Mean":
-                        new_row[j] = str(round(col_stats[col]["mean"], 4))
-                    elif strat == "Median":
-                        new_row[j] = str(round(col_stats[col]["median"], 4))
-                    elif strat == "Mode":
-                        new_row[j] = col_stats[col]["mode"]
-                    elif strat == "Fill constant":
-                        new_row[j] = fill_val or "0"
-                    elif strat == "Forward-fill":
-                        last = next(
-                            (result[-k-1][j] for k in range(len(result))
-                             if j < len(result[-k-1]) and result[-k-1][j]), None)
-                        new_row[j] = last or ""
-            if not drop:
-                result.append(new_row)
-        return result, headers
-
-    @staticmethod
-    def _apply_outliers(data, headers, cfg):
-        treatment = cfg.get("treatment", "skip")
-        if treatment == "skip":
-            return data, headers
-        method  = cfg.get("method", "iqr")
-        iqr_m   = cfg.get("iqr_mult", 1.5)
-        z_thr   = cfg.get("zscore_thr", 3.0)
-        columns = cfg.get("columns", [])
-        if not columns:
-            return data, headers
-        col_bounds = {}
-        for col in columns:
-            if col not in headers:
-                continue
-            j = headers.index(col)
-            vals = []
-            for row in data:
-                if j < len(row) and row[j] and row[j].strip():
-                    try:
-                        vals.append(float(row[j]))
-                    except ValueError:
-                        pass
-            if not vals:
-                continue
-            if method == "iqr":
-                sv  = sorted(vals); n = len(sv)
-                q1  = sv[n // 4];   q3 = sv[3 * n // 4]
-                iqr = q3 - q1
-                col_bounds[col] = (q1 - iqr_m * iqr, q3 + iqr_m * iqr)
-            else:
-                mean = sum(vals) / len(vals)
-                var  = sum((v - mean) ** 2 for v in vals) / len(vals)
-                std  = var ** 0.5 or 1
-                col_bounds[col] = (mean - z_thr * std, mean + z_thr * std)
-        if treatment == "flag":
-            extra_headers = [f"{c}_outlier" for c in col_bounds]
-            headers = list(headers) + extra_headers
-        result = []
-        for row in data:
-            new_row = list(row); drop = False; flags = {}
-            for col, (lo, hi) in col_bounds.items():
-                j = headers.index(col) if col in headers else -1
-                if j == -1 or j >= len(new_row):
-                    flags[col] = "0"; continue
-                try:
-                    val = float(new_row[j]); is_out = val < lo or val > hi
-                except ValueError:
-                    is_out = False
-                if is_out:
-                    if treatment == "remove":
-                        drop = True; break
-                    elif treatment == "cap":
-                        new_row[j] = str(round(min(max(float(new_row[j]), lo), hi), 6))
-                flags[col] = "1" if is_out else "0"
-            if not drop:
-                if treatment == "flag":
-                    new_row += [flags.get(c, "0") for c in col_bounds]
-                result.append(new_row)
-        return result, headers
-
-    @staticmethod
-    def _apply_scaling(data, headers, cfg):
-        method  = cfg.get("method", "skip")
-        if method == "skip":
-            return data, headers
-        columns = cfg.get("columns", [])
-        if not columns:
-            return data, headers
-        for col in columns:
-            if col not in headers:
-                continue
-            j    = headers.index(col)
-            vals = []
-            for row in data:
-                if j < len(row) and row[j] and row[j].strip():
-                    try:
-                        vals.append(float(row[j]))
-                    except ValueError:
-                        pass
-            if not vals:
-                continue
-            if method == "minmax":
-                lo, hi = min(vals), max(vals); rng = (hi - lo) or 1
-                for row in data:
-                    if j < len(row) and row[j] and row[j].strip():
-                        try: row[j] = str(round((float(row[j]) - lo) / rng, 6))
-                        except ValueError: pass
-            elif method == "zscore":
-                mean = sum(vals) / len(vals)
-                std  = (sum((v - mean) ** 2 for v in vals) / len(vals)) ** 0.5 or 1
-                for row in data:
-                    if j < len(row) and row[j] and row[j].strip():
-                        try: row[j] = str(round((float(row[j]) - mean) / std, 6))
-                        except ValueError: pass
-            elif method == "robust":
-                sv  = sorted(vals); n = len(sv)
-                med = sv[n // 2]; q1 = sv[n // 4]; q3 = sv[3 * n // 4]
-                iqr = (q3 - q1) or 1
-                for row in data:
-                    if j < len(row) and row[j] and row[j].strip():
-                        try: row[j] = str(round((float(row[j]) - med) / iqr, 6))
-                        except ValueError: pass
-        return data, headers
-
-    @staticmethod
-    def _apply_encoding(data, headers, cfg):
-        methods   = cfg.get("column_methods", {})
-        drop_orig = cfg.get("drop_original", True)
-        if not methods:
-            return data, headers
-        new_headers    = list(headers)
-        col_insertions = []
-        for col, method in methods.items():
-            if method == "Skip" or col not in new_headers:
-                continue
-            j = new_headers.index(col)
-            if method == "Label encode":
-                unique_vals = sorted(set(row[j] for row in data if j < len(row) and row[j]))
-                label_map   = {v: str(i) for i, v in enumerate(unique_vals)}
-                for row in data:
-                    if j < len(row):
-                        row[j] = label_map.get(row[j], row[j])
-            elif method == "One-hot encode":
-                unique_vals = sorted(set(row[j] for row in data if j < len(row) and row[j]))
-                extra_cols  = [f"{col}_{v}" for v in unique_vals]
-                col_insertions.append((j, extra_cols, unique_vals, col))
-        for j, extra_cols, unique_vals, col in reversed(col_insertions):
-            for row in data:
-                val       = row[j] if j < len(row) else ""
-                ohe_flags = ["1" if val == uv else "0" for uv in unique_vals]
-                if drop_orig: row[j:j+1] = ohe_flags
-                else:         row[j+1:j+1] = ohe_flags
-            if drop_orig: new_headers[j:j+1] = extra_cols
-            else:         new_headers[j+1:j+1] = extra_cols
-        return data, new_headers
+    # NOTE: Processing functions now integrated in PreprocessingPipeline class
+    # in preprocess.py module for better code organization and reusability.
 
     # ── Save ─────────────────────────────────────────────────────────────────
 
