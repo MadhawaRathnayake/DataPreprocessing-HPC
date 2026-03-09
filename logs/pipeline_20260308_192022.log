@@ -1,0 +1,29 @@
+2026-03-08 19:20:22 [    INFO] root                          : ================================================================================
+2026-03-08 19:20:22 [    INFO] root                          : HPC Data Preprocessing Pipeline - Execution Started
+2026-03-08 19:20:22 [    INFO] root                          : ================================================================================
+2026-03-08 19:20:22 [    INFO] root                          : Log file: /mnt/e/Sem 07/HPC/DataPreprocessing-HPC/logs/pipeline_20260308_192022.log
+2026-03-08 19:20:22 [    INFO] root                          : ================================================================================
+2026-03-08 19:20:43 [    INFO] PreprocessingPipeline.serial  : Initialized SERIAL backend using C library (threads=1, processes=1, cores=16)
+2026-03-08 19:20:43 [    INFO] PreprocessingPipeline.serial  : Pipeline START: 4080 rows x 4 columns
+2026-03-08 19:20:43 [    INFO] PreprocessingPipeline.serial  : Debug logs available at /tmp/preprocess.log
+2026-03-08 19:20:43 [   DEBUG] PreprocessingPipeline.serial  : Calling C preprocessing function: preprocess_serial
+2026-03-08 19:20:43 [    INFO] PreprocessingPipeline.serial  : Pipeline COMPLETE: 4080 rows × 4 columns
+2026-03-08 19:20:43 [    INFO] PreprocessingPipeline.serial  : C preprocessing time: 60.97ms
+2026-03-08 19:20:43 [    INFO] PreprocessingPipeline.serial  : Metrics: Duplicates=0, Missing=0, Outliers=16, Scaled=0, Encoded=0
+2026-03-08 19:20:43 [    INFO] PreprocessingPipeline.serial  : ================================================================================
+2026-03-08 19:20:51 [    INFO] PreprocessingPipeline.openmp  : Initialized OPENMP backend using C library (threads=8, processes=1, cores=16)
+2026-03-08 19:20:51 [    INFO] PreprocessingPipeline.openmp  : Pipeline START: 4080 rows x 4 columns
+2026-03-08 19:20:51 [    INFO] PreprocessingPipeline.openmp  : Debug logs available at /tmp/preprocess.log
+2026-03-08 19:20:51 [   DEBUG] PreprocessingPipeline.openmp  : Calling C preprocessing function: preprocess_openmp
+2026-03-08 19:20:51 [    INFO] PreprocessingPipeline.openmp  : Pipeline COMPLETE: 4080 rows × 4 columns
+2026-03-08 19:20:51 [    INFO] PreprocessingPipeline.openmp  : C preprocessing time: 37.96ms
+2026-03-08 19:20:51 [    INFO] PreprocessingPipeline.openmp  : Metrics: Duplicates=0, Missing=0, Outliers=16, Scaled=0, Encoded=0
+2026-03-08 19:20:51 [    INFO] PreprocessingPipeline.openmp  : ================================================================================
+2026-03-08 19:21:00 [    INFO] PreprocessingPipeline.mpi     : Initialized MPI backend using C library (threads=1, processes=4, cores=16)
+2026-03-08 19:21:00 [    INFO] PreprocessingPipeline.mpi     : Pipeline START: 4080 rows x 4 columns
+2026-03-08 19:21:00 [    INFO] PreprocessingPipeline.mpi     : Debug logs available at /tmp/preprocess.log
+2026-03-08 19:21:00 [   DEBUG] PreprocessingPipeline.mpi     : Calling C preprocessing function: preprocess_mpi
+2026-03-08 19:21:00 [    INFO] PreprocessingPipeline.mpi     : Pipeline COMPLETE: 4080 rows × 4 columns
+2026-03-08 19:21:00 [    INFO] PreprocessingPipeline.mpi     : C preprocessing time: 37.71ms
+2026-03-08 19:21:00 [    INFO] PreprocessingPipeline.mpi     : Metrics: Duplicates=0, Missing=0, Outliers=16, Scaled=0, Encoded=2
+2026-03-08 19:21:00 [    INFO] PreprocessingPipeline.mpi     : ================================================================================

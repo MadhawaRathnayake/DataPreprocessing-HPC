@@ -45,6 +45,15 @@ cd ../..
 echo "✓ OpenMP Analyzer built successfully"
 echo ""
 
+# Build Preprocessor (Duplicates, Missing, Outliers, Scaling, Encoding)
+echo "Building Preprocessor module (C implementation)..."
+cd modules/preprocessor
+make clean
+make
+cd ../..
+echo "✓ Preprocessor module built successfully"
+echo ""
+
 # Build MPI Analyzer (optional, requires MPI)
 echo "Building MPI Analyzer module..."
 if command -v mpicc &> /dev/null; then

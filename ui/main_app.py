@@ -15,10 +15,8 @@ import theme
 
 # Import tab modules
 from import_tab import ImportTab
-from series_processing_tab import SeriesProcessingTab
-from openmp_pipeline_tab import OpenMPPipelineTab
-from mpi_pipeline_tab import MPIPipelineTab
-from cuda_pipeline_tab import CUDAPipelineTab
+from unified_pipeline_tab import UnifiedPipelineTab
+from benchmark_tab import BenchmarkComparisonTab
 from export_tab import ExportTab
 
 # Get the project root directory
@@ -31,7 +29,7 @@ class DataPreprocessingApp:
     
     def __init__(self, root):
         self.root = root
-        self.root.title("HPC Data Preprocessing — Series · OpenMP · MPI · CUDA")
+        self.root.title("HPC Data Preprocessing — Pipeline Analytics")
         self.root.geometry("1280x820")
         self.root.minsize(900, 600)
 
@@ -189,7 +187,7 @@ class DataPreprocessingApp:
 
         tk.Label(
             header,
-            text="Series · OpenMP · MPI · CUDA Parallel Analytics",
+            text="Unified Pipeline with Method Selection",
             bg=theme.BG_ROOT, fg=theme.TEXT_MUTED,
             font=("Segoe UI", 9),
         ).pack(side=tk.LEFT, padx=4, pady=20, anchor='s')
@@ -217,18 +215,15 @@ class DataPreprocessingApp:
 
         # Create all tabs using modular approach
         self.tabs['import'] = ImportTab(self.notebook, self)
-        self.tabs['serial'] = SeriesProcessingTab(self.notebook, self)
-        self.tabs['openmp'] = OpenMPPipelineTab(self.notebook, self)
-        self.tabs['mpi']    = MPIPipelineTab(self.notebook, self)
-        self.tabs['cuda']   = CUDAPipelineTab(self.notebook, self)
+        self.tabs['pipeline'] = UnifiedPipelineTab(self.notebook, self)
+        self.benchmark_tab  = BenchmarkComparisonTab(self.notebook, self)
+        self.tabs['benchmark'] = self.benchmark_tab
         self.tabs['export'] = ExportTab(self.notebook, self)
 
         # Add tabs to notebook
         self.notebook.add(self.tabs['import'].get_frame(),  text="  📂  Import  ")
-        self.notebook.add(self.tabs['serial'].get_frame(),  text="  🔬  Series Processing  ")
-        self.notebook.add(self.tabs['openmp'].get_frame(),  text="  ⚡  OpenMP Parallel  ")
-        self.notebook.add(self.tabs['mpi'].get_frame(),     text="  🌐  MPI Parallel  ")
-        self.notebook.add(self.tabs['cuda'].get_frame(),    text="  🚀  CUDA Parallel  ")
+        self.notebook.add(self.tabs['pipeline'].get_frame(), text="  🔄  Pipeline  ")
+        self.notebook.add(self.benchmark_tab.get_frame(),   text="  📊  Benchmark  ")
         self.notebook.add(self.tabs['export'].get_frame(),  text="  💾  Export  ")
         
     def bind_events(self):
@@ -241,18 +236,22 @@ class DataPreprocessingApp:
         
     def on_tab_changed(self, event):
         """Handle tab change events"""
-        # Get current tab index
-        current_tab_index = self.notebook.index(self.notebook.select())
-        
-        # Get tab names in order
-        tab_names = ['import', 'serial', 'openmp', 'mpi', 'cuda', 'export']
-        
-        if current_tab_index < len(tab_names):
-            current_tab_name = tab_names[current_tab_index]
+        try:
+            # Get current tab index
+            current_tab_index = self.notebook.index(self.notebook.select())
             
-            # Call the selected tab's on_tab_selected method
-            if current_tab_name in self.tabs:
-                self.tabs[current_tab_name].on_tab_selected()
+            # Get tab names in order (matching the tabs created in create_ui)
+            tab_names = ['import', 'pipeline', 'benchmark', 'export']
+            
+            if current_tab_index < len(tab_names):
+                current_tab_name = tab_names[current_tab_index]
+                
+                # Call the selected tab's on_tab_selected method if it exists
+                if current_tab_name in self.tabs and hasattr(self.tabs[current_tab_name], 'on_tab_selected'):
+                    self.tabs[current_tab_name].on_tab_selected()
+        except (KeyError, IndexError) as e:
+            # Silently handle tab switching issues
+            pass
                 
     def set_status(self, message):
         """Update status bar message"""
