@@ -1,6 +1,6 @@
 """
 Preprocessing Pipeline Implementation
-Implements the 5-stage data preprocessing pipeline using pure C code.
+Implements the 5-stage data preprocessing pipeline using C.
 No Python fallback - all transformations handled by C libraries.
 """
 
@@ -100,7 +100,16 @@ class PreprocessingPipeline:
             return data, headers, {'error': str(e)}
         
         # Build config structs for C library
-        remove_duplicates = 1 if (configs and len(configs) > 1 and configs[1]) else 0
+        # configs is now a list from _collect_configs() where:
+        # [0]=Overview, [1]=Duplicates, [2]=Missing, [3]=Outliers, [4]=Scaling, [5]=Encoding
+        
+        # Check if Duplicates stage is enabled (action != "skip")
+        remove_duplicates = 0
+        if configs and len(configs) > 1:
+            dup_config = configs[1]
+            if isinstance(dup_config, dict) and dup_config.get("action") != "skip":
+                remove_duplicates = 1
+        
         outlier_cfg = self._build_outlier_config(configs[3] if configs and len(configs) > 3 else None, headers)
         scaling_cfg = self._build_scaling_config(configs[4] if configs and len(configs) > 4 else None, headers)
         encoding_cfg = self._build_encoding_config(configs[5] if configs and len(configs) > 5 else None, headers)
