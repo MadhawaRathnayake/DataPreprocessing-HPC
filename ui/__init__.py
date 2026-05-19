@@ -1,24 +1,19 @@
 """
-UI Package for Data Preprocessing Application
+Data Preprocessing Application UI Package
 
-This package contains modular UI components organized by tabs.
-Each tab is implemented as a separate module inheriting from BaseTab.
+Provides reusable components and the main application framework.
 """
 
 from .base_tab import BaseTab
 from .import_tab import ImportTab
-from .series_processing_tab import SeriesProcessingTab
-from .openmp_analyzer_tab import OpenMPAnalyzerTab
-from .mpi_analyzer_tab import MPIAnalyzerTab
+from .unified_pipeline_tab import UnifiedPipelineTab
+from .benchmark_tab import BenchmarkComparisonTab
 from .export_tab import ExportTab
 
 __all__ = [
     'BaseTab',
     'ImportTab',
-    'SeriesProcessingTab',
-    'OpenMPAnalyzerTab',
-    'MPIAnalyzerTab',
+    'UnifiedPipelineTab',
+    'BenchmarkComparisonTab',
     'ExportTab'
 ]
-
-__version__ = '1.0.0'
