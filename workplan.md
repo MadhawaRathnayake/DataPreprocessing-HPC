@@ -1,77 +1,68 @@
-# Project Workplan: HPC Data Preprocessing Application
+# Comprehensive Project Workplan & Roadmap
 
-## 1. Project Overview
-This application is a high-performance data preprocessing tool featuring a modular C backend for heavy computation and a Python Tkinter GUI for user interaction. It supports multiple processing modes: Serial, OpenMP (parallel), MPI (distributed), and CUDA (GPU acceleration).
-
----
-
-## 2. Completed Features (Done) ✅
-
-### UI & UX
-- [x] **Modern Modular UI**: Tabbed interface using a custom theme and `UnifiedPipelineTab`.
-- [x] **Dynamic Method Selection**: Seamlessly switch between Serial, OpenMP, MPI, and CUDA modes.
-- [x] **Import & Preview**: CSV file browser with a 20-row preview table using a dedicated C importer module.
-- [x] **Benchmark Tab**: Performance comparison dashboard showing timing metrics across different backends.
-- [x] **Export System**: Ability to save processed results back to CSV.
-
-### Core Processing (Serial)
-- [x] **C Preprocessor Library**: Fully implemented 5-stage pipeline in C:
-    1. Duplicate Removal
-    2. Missing Value Imputation (Mean/Mode)
-    3. Outlier Detection (IQR Method)
-    4. Scaling & Normalization (Min-Max)
-    5. Categorical Encoding (Label Encoding)
-- [x] **C Analyzer Library**: Statistical analysis for numeric and categorical columns.
-
-### Parallel Processing (OpenMP)
-- [x] **OpenMP Analysis**: Column-level parallelization for statistical analysis using `#pragma omp parallel for`.
+## Overview
+This document serves as the single source of truth for the project's development roadmap. It synthesizes the current architectural state with planned enhancements, structured specifically for tracking via GitHub Issues and Epics.
 
 ---
 
-## 3. In-Progress / Partially Implemented ⏳
+## Phase 1: Completing Core Parallelization (High Priority)
+*Focus: Upgrading the existing C preprocessor placeholders to utilize true shared-memory and distributed-memory parallelization.*
 
-### MPI Integration
-- [x] **MPI Framework**: Interface and UI are ready.
-- [ ] **Distributed Logic**: Current MPI backend is simulated/serial. Needs implementation of data distribution (scatter/gather) across multiple processes.
+### Epic: OpenMP Preprocessing Pipeline
+Currently, the UI calls `preprocess_openmp`, but the C backend delegates to the serial implementation.
+- [ ] **Issue 1.1**: Parallelize Outlier Detection using `#pragma omp parallel for` across columns.
+- [ ] **Issue 1.2**: Parallelize Scaling & Normalization (Min-Max/Z-Score) using OpenMP.
+- [ ] **Issue 1.3**: Parallelize Categorical Encoding across columns using OpenMP.
 
-### Preprocessing Parallelization
-- [x] **OpenMP/MPI Wiring**: The UI correctly calls the parallel entry points.
-- [ ] **Parallel Stages**: Currently, `preprocess_openmp` and `preprocess_mpi` delegate to the serial implementation. Need to implement parallel versions of:
-    - Outlier detection (parallelize across columns)
-    - Scaling & Normalization (parallelize across columns)
-    - Encoding (parallelize across columns)
-
----
-
-## 4. Planned Features (To Do) 🚀
-
-### GPU Acceleration
-- [ ] **CUDA Backend**: Implement `modules/analyzer_cuda/` and `libcudaanalyzer.so`.
-- [ ] **GPU Kernels**: Implement massively parallel kernels for data normalization and outlier detection.
-
-### Advanced Data Handling
-- [ ] **Excel Support**: Integration of libraries like `libxlsxwriter` for .xlsx import/export.
-- [ ] **Database Integration**: Connectors for PostgreSQL/MySQL for direct data ingestion.
-- [ ] **Batch Processing**: CLI mode for running pipelines on large directories of CSVs without the GUI.
-
-### Analytics & Visualization
-- [ ] **Enhanced Statistics**: Add skewness, kurtosis, and correlation matrices.
-- [ ] **Data Visualization**: Integrated charts (histograms, box plots, scatter plots) using Matplotlib or a C-based graphics library.
+### Epic: MPI Distributed Processing
+The MPI framework is wired up, but execution is currently simulated (runs serially on a single process).
+- [ ] **Issue 1.4**: Implement `MPI_Scatter` to distribute CSV data columns across multiple processes in `mpi_analyzer.c`.
+- [ ] **Issue 1.5**: Implement `MPI_Gather` to collect and merge analyzed statistics back to the root process.
+- [ ] **Issue 1.6**: Extend MPI data distribution to the transformation stages in `preprocess_mpi` (Outliers, Scaling, Encoding).
 
 ---
 
-## 5. Technical Debt & Improvements 🛠️
+## Phase 2: Technical Debt & Stability (Medium Priority)
+*Focus: Resolving existing architectural limitations and cleaning up the codebase.*
 
-- [ ] **Dynamic Memory Management**: Replace fixed-size buffers (`char[4096]`) in C modules with dynamic allocation to support extremely wide CSV rows.
-- [ ] **Error Propagation**: Improve error reporting from C shared libraries to the Python UI (currently uses simplified return codes).
-- [ ] **Redundancy Cleanup**: Consolidate redundant stage files in `ui/pipeline_stages/` (many files across `series`, `openmp`, `mpi` are identical).
-- [ ] **Logging**: Fully implement the logging system described in `ARCHITECTURE_AND_PERFORMANCE.md`.
+### Epic: UI & Codebase Cleanup
+- [ ] **Issue 2.1**: **Redundancy Cleanup**: Consolidate redundant pipeline stage configurations in `ui/pipeline_stages/`. Currently, `series`, `openmp`, and `mpi` folders contain nearly identical Python UI code. Implement a shared base UI stage architecture.
+- [ ] **Issue 2.2**: **Logging Integration**: Fully integrate the file-based logging system (`ui/logging_config.py`) across all Python UI components and C library calls as described in `ARCHITECTURE_AND_PERFORMANCE.md`.
+
+### Epic: C Backend Robustness
+- [ ] **Issue 2.3**: **Dynamic Memory Management**: Replace fixed-size buffers (e.g., `char temp[4096]`) in `preprocessor.c` with dynamic memory allocation to support extremely wide CSV rows without buffer overflows.
+- [ ] **Issue 2.4**: **Error Propagation**: Enhance error reporting from the C shared libraries to the Python UI. Replace simplified integer return codes with structured error messages.
 
 ---
 
-## 6. Development Roadmap
+## Phase 3: GPU Acceleration (Planned)
+*Focus: Leveraging CUDA for massively parallel data transformations on NVIDIA GPUs.*
 
-1. **Phase 1 (Parallel Preprocessing)**: Implement OpenMP parallelization for the transformation stages in `preprocessor.c`.
-2. **Phase 2 (Distributed MPI)**: Implement real MPI data distribution for the analyzer and preprocessor.
-3. **Phase 3 (CUDA)**: Develop the CUDA backend for GPU acceleration.
-4. **Phase 4 (Expansion)**: Add visualization and support for more file formats.
+### Epic: CUDA Backend Implementation
+The UI currently has a placeholder `UnifiedPipelineTab` option for CUDA.
+- [ ] **Issue 3.1**: Create the core CUDA framework (`modules/analyzer_cuda/cuda_analyzer.cu`) and Makefile for building `libcudaanalyzer.so`.
+- [ ] **Issue 3.2**: Implement CUDA kernels for Min-Max and Z-Score Normalization.
+- [ ] **Issue 3.3**: Implement CUDA kernels for IQR-based Outlier Detection.
+- [ ] **Issue 3.4**: Integrate `libcudaanalyzer.so` via `ctypes` into the Python UI (`ui/pipeline_stages/cuda/stage_apply.py`).
+
+---
+
+## Phase 4: Advanced Features & Analytics (Future)
+*Focus: Expanding the application's capabilities beyond basic CSV processing.*
+
+### Epic: Extended Data Handling
+- [ ] **Issue 4.1**: **Excel Support**: Integrate a library like `libxlsxwriter` or a Python equivalent to support reading/writing `.xlsx` files.
+- [ ] **Issue 4.2**: **Database Connectors**: Implement direct data ingestion from PostgreSQL and MySQL databases.
+- [ ] **Issue 4.3**: **Batch CLI Mode**: Create a headless CLI script to run preprocessing pipelines on large directories of files without launching the Tkinter GUI.
+
+### Epic: Enhanced Analytics
+- [ ] **Issue 4.4**: **Advanced Statistics**: Expand the C analyzer to calculate skewness, kurtosis, and correlation matrices.
+- [ ] **Issue 4.5**: **Data Visualization**: Integrate visual charts (histograms, box plots, scatter plots) into the UI using Matplotlib or a dedicated C-based graphics library.
+
+---
+
+## Summary of Current State (For Reference)
+* **UI**: Modular Tkinter interface (`UnifiedPipelineTab`) with dynamic backend switching.
+* **Serial Backend**: Fully implemented 5-stage pipeline in C (Duplicates, Missing, Outliers, Scaling, Encoding).
+* **OpenMP Analyzer**: Implemented for statistical analysis.
+* **Infrastructure**: Automated `build.sh` script creating `.so` libraries for `ctypes` integration.

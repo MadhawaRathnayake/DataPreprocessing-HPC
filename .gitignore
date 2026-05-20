@@ -1,0 +1,30 @@
+# Compiled C/C++ artifacts
+*.o
+*.so
+lib/
+
+# Python artifacts
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.env/
+
+# Logs
+logs/*.log
+
+# IDEs
+.vscode/
+.idea/
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Project specific temporary files
+workplan.md
+data/large_dataset.csv
+data/hpc_preprocessing_dataset_100k.csv

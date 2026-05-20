@@ -3,9 +3,9 @@
 ## Executive Summary
 
 This is a **modular data preprocessing application** built with a hybrid architecture:
-- **Backend**: High-performance C modules for data processing
-- **Frontend**: Python Tkinter GUI for user interaction
-- **Parallel Processing**: OpenMP and MPI support for scalability
+- **Backend**: High-performance C modules for data processing.
+- **Frontend**: Python Tkinter GUI for user interaction, using a modern, unified pipeline architecture.
+- **Parallel Processing**: OpenMP and MPI support for scalability (partially implemented, with full preprocessing parallelization planned).
 
 The application demonstrates professional software engineering practices including modularity, parallel computing, and cross-language integration.
 
@@ -37,24 +37,26 @@ The application demonstrates professional software engineering practices includi
 
 ### 4. MPI Analyzer Module (C)
 - ✅ Framework for distributed processing
-- ✅ MPI integration structure (simplified implementation)
-- ✅ Ready for extension to full distributed computing
+- ✅ MPI integration structure (simplified serial implementation currently; full distributed scatter/gather planned)
 
-### 5. Python Tkinter UI
-- ✅ Professional tabbed interface
-- ✅ File browser with CSV selection
-- ✅ Data preview table (first 15 rows)
-- ✅ Separate tabs for each analysis mode
-- ✅ Real-time status updates
-- ✅ Results display with scrollable text
-- ✅ Thread count configuration for OpenMP
+### 5. C Preprocessor Module
+- ✅ Full C implementation of the 5-stage transformation pipeline (Duplicates, Missing, Outliers, Scaling, Encoding).
+- ✅ Memory-managed string processing for high performance.
+- ⏳ OpenMP and MPI versions are wired up but currently delegate to the serial implementation (Parallelization is the next major milestone).
+
+### 6. Python Tkinter UI
+- ✅ Professional tabbed interface with a `UnifiedPipelineTab`.
+- ✅ Dynamic backend switching (Serial, OpenMP, MPI, CUDA).
+- ✅ File browser with CSV selection.
+- ✅ Data preview table.
+- ✅ Real-time status updates and benchmarking metrics.
 
 ## Architecture
 
 ```
 ┌─────────────────────────────────────────┐
 │         Python Tkinter UI               │
-│  (File selection, Display, Controls)    │
+│  (Unified Pipeline, Settings, Controls) │
 └──────────────┬──────────────────────────┘
                │ ctypes
                │ (Python-C Interface)
@@ -63,8 +65,8 @@ The application demonstrates professional software engineering practices includi
     │                                 │
     ▼                                 ▼
 ┌─────────────┐           ┌──────────────────┐
-│   Import    │           │    Analyzers     │
-│   Module    │           │                  │
+│   Import    │           │   Processors &   │
+│   Module    │           │    Analyzers     │
 │   (C lib)   │           │  ┌─────────────┐ │
 │             │           │  │   Serial    │ │
 └─────────────┘           │  │   (C lib)   │ │
@@ -97,22 +99,23 @@ data_preprocessing_app/
 │   │   ├── openmp_analyzer.h
 │   │   ├── openmp_analyzer.c  # Parallel analysis with OpenMP
 │   │   └── Makefile
-│   └── analyzer_mpi/
-│       ├── mpi_analyzer.h
-│       ├── mpi_analyzer.c     # MPI-based analysis framework
-│       └── Makefile
+│   ├── analyzer_mpi/
+│   │   ├── mpi_analyzer.h
+│   │   ├── mpi_analyzer.c     # MPI-based analysis framework
+│   │   └── Makefile
+│   └── preprocessor/          # Full 5-stage transformation pipeline in C
 ├── ui/
-│   └── main_app.py            # Python Tkinter interface
+│   ├── main_app.py            # Main application coordinator
+│   ├── unified_pipeline_tab.py# Modern modular pipeline UI
+│   └── pipeline_stages/       # UI configurations for pipeline steps
 ├── lib/                       # Compiled shared libraries (.so)
-│   ├── libcsvimporter.so
-│   ├── libserialanalyzer.so
-│   └── libompanalyzer.so
 ├── data/
 │   └── sample_employees.csv   # Sample dataset for testing
 ├── build.sh                   # Automated build script
 ├── run.sh                     # Application launcher
 ├── README.md                  # Full documentation
-└── QUICKSTART.md              # Getting started guide
+├── QUICKSTART.md              # Getting started guide
+└── workplan.md                # Comprehensive development roadmap
 ```
 
 ## Technology Stack
@@ -129,11 +132,10 @@ data_preprocessing_app/
 - **Language**: Python 3.6+
 - **GUI**: Tkinter (built-in)
 - **Integration**: ctypes for C library loading
-- **Data**: CSV module for fallback reading
 
 ### Development Tools
-- **Version Control**: Git-ready structure
-- **Documentation**: Markdown (README, QUICKSTART)
+- **Version Control**: Git
+- **Documentation**: Markdown
 - **Build System**: Shell scripts + Makefiles
 
 ## Analysis Capabilities
@@ -165,70 +167,15 @@ data_preprocessing_app/
 ## Parallel Processing Features
 
 ### OpenMP Implementation
-- **Strategy**: Column-level parallelization
+- **Strategy**: Column-level parallelization (currently implemented in analyzer; planned for preprocessor)
 - **Scheduling**: Dynamic work distribution
 - **Thread Safety**: Critical sections for output
 - **Scalability**: Configurable thread count (1-16)
 - **Performance**: Processing time measurement
 
 ### MPI Framework (Extensible)
-- **Current**: Simplified single-process implementation
-- **Design**: Ready for multi-process distribution
-- **Use Case**: Very large datasets across multiple machines
-- **Future**: Full MPI_Send/Recv implementation
-
-## Modularity & Extensibility
-
-### Easy to Add New Features:
-
-1. **New Preprocessing Operations**
-   - Create module in `modules/new_feature/`
-   - Implement C functions
-   - Add Makefile
-   - Update UI to call the module
-
-2. **New File Formats**
-   - Extend importer module
-   - Add format detection
-   - Implement parser
-
-3. **New Analysis Methods**
-   - Add functions to analyzer modules
-   - Expose via shared library
-   - Update UI display
-
-### Example Extensions (Not Yet Implemented):
-- Missing value imputation (mean, median, mode)
-- Outlier removal
-- Data normalization (min-max, z-score)
-- Categorical encoding (one-hot, label)
-- Feature selection
-- Data transformation (log, sqrt, power)
-- Export to multiple formats
-
-## Performance Characteristics
-
-### CSV Import
-- **Speed**: ~100K rows/second (typical)
-- **Memory**: O(n*m) for n rows, m columns
-- **Scalability**: Limited by available RAM
-
-### Serial Analysis
-- **Complexity**: O(n*m) where n=rows, m=columns
-- **Best For**: Small to medium datasets (< 100K rows)
-- **Overhead**: Minimal, single-threaded
-
-### OpenMP Analysis
-- **Complexity**: O(n*m/p) where p=threads
-- **Best For**: Medium to large datasets (10K - 1M rows)
-- **Speedup**: Near-linear with number of cores
-- **Overhead**: Thread creation and synchronization
-
-### MPI Analysis
-- **Complexity**: O(n*m/p) distributed across processes
-- **Best For**: Very large datasets (> 1M rows)
-- **Scalability**: Can use multiple machines
-- **Overhead**: Communication between processes
+- **Current**: Framework is loaded, but execution is simulated serially without true distributed logic.
+- **Design**: Ready for multi-process distribution via `MPI_Scatter` and `MPI_Gather`.
 
 ## Build System
 
@@ -237,14 +184,10 @@ data_preprocessing_app/
 ./build.sh
 ```
 
-Compiles:
-1. CSV Importer → libcsvimporter.so
-2. Serial Analyzer → libserialanalyzer.so  
-3. OpenMP Analyzer → libompanalyzer.so
-4. MPI Analyzer → libmpianalyzer.so (if MPI available)
+Compiles all C modules into shared libraries in the `lib/` directory.
 
 ### Compilation Flags
-- `-O2`: Optimization level 2
+- `-O3`: Maximum optimization level
 - `-fPIC`: Position Independent Code (for shared libraries)
 - `-fopenmp`: OpenMP support
 - `-Wall`: All warnings
@@ -257,71 +200,20 @@ Included: `data/sample_employees.csv`
 - 30 rows
 - 6 columns (Name, Age, Salary, Department, Experience, Performance)
 - Mix of numeric and categorical data
-- Perfect for testing all features
 
 ### Typical Workflow
 1. Build application: `./build.sh`
-2. Launch: `./run.sh` or `python3 ui/main_app.py`
+2. Launch: `./run.sh`
 3. Import: Browse and select CSV file
-4. Analyze: Run serial or parallel analysis
-5. Review: Check statistics and quality metrics
-6. (Future) Export: Save processed data
-
-## Design Principles
-
-### 1. Modularity
-- Each component is independent
-- Clear interfaces between modules
-- Easy to modify or replace modules
-
-### 2. Performance
-- C for computational performance
-- Parallel processing for scalability
-- Optimized algorithms (IQR outlier detection, sorted medians)
-
-### 3. Extensibility
-- Plugin-style architecture
-- Well-documented APIs
-- Easy to add new features
-
-### 4. Usability
-- Simple GUI
-- Clear status messages
-- Preview before processing
-
-### 5. Portability
-- Cross-platform C code
-- Standard Python/Tkinter
-- Shell scripts for automation
+4. Pipeline: Go to the Unified Pipeline tab, select a method (e.g., OpenMP), configure the 5 stages, and run.
+5. Benchmark: View the performance metrics on the Benchmark tab.
 
 ## Future Development Roadmap
 
-### Phase 1 (Current) ✅
-- Basic import and preview
-- Serial analysis
-- OpenMP parallel analysis
-- MPI framework
-
-### Phase 2 (Next)
-- Complete MPI implementation
-- Export functionality
-- More statistical measures
-- Data visualization (charts)
-
-### Phase 3 (Future)
-- Missing value handling
-- Outlier treatment
-- Data transformation
-- Feature engineering
-- Batch processing
-- Command-line interface
-
-### Phase 4 (Advanced)
-- Machine learning preprocessing
-- Automated data profiling
-- Report generation
-- Integration with databases
-- Cloud storage support
+See `workplan.md` for a detailed breakdown of completed tasks, work-in-progress, and the backlog. Major upcoming milestones include:
+1. True OpenMP parallelization inside `preprocessor.c`.
+2. True MPI data distribution across multiple processes.
+3. CUDA GPU kernel implementation for extreme scaling.
 
 ## Dependencies
 
@@ -332,52 +224,7 @@ Included: `data/sample_employees.csv`
 
 ### Optional:
 - OpenMPI or MPICH (for MPI module)
-- Additional data format libraries (for Excel, etc.)
-
-### Development:
-- Make
-- Git
-- Text editor or IDE
-
-## Installation
-
-See QUICKSTART.md and README.md for detailed installation instructions for:
-- Ubuntu/Debian
-- Fedora/RHEL/CentOS
-- Other Linux distributions
-
-## Known Limitations
-
-1. **MPI Implementation**: Currently simplified, full distributed processing requires extension
-2. **File Formats**: Only CSV supported (Excel support planned)
-3. **Export**: Not yet implemented
-4. **Large Files**: Memory-bound (entire file loaded into RAM)
-5. **Error Handling**: Basic error handling, could be more robust
-
-## Contributions & Extensions
-
-This project is designed to be educational and extensible. Areas for contribution:
-- Additional preprocessing methods
-- More file format support
-- Enhanced visualization
-- Performance optimizations
-- Better error handling
-- Unit tests
-- Documentation improvements
 
 ## License
 
 Educational/Demonstration project. Free to use and modify.
-
-## Summary
-
-This data preprocessing application demonstrates:
-- ✅ Modular software architecture
-- ✅ High-performance C programming
-- ✅ Parallel processing (OpenMP, MPI)
-- ✅ Python-C integration
-- ✅ GUI development with Tkinter
-- ✅ Professional build systems
-- ✅ Extensible design patterns
-
-Perfect foundation for building more advanced data processing tools!
