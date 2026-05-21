@@ -1,5 +1,6 @@
 #include "serial_analyzer.h"
 
+
 // Helper function to check if string is numeric
 static int is_numeric(const char *str) {
     if (!str || strlen(str) == 0) return 0;
@@ -50,6 +51,8 @@ DatasetStats* analyzer_create_stats(int num_columns) {
     
     return stats;
 }
+
+
 
 void analyzer_free_stats(DatasetStats *stats) {
     if (!stats) return;
@@ -217,8 +220,6 @@ static void analyze_column(char **column_data, int num_rows,
         // Determine categorical type
         if (stats->unique_count == 2) {
             stats->category = CAT_BINARY;
-        } else if (stats->unique_count < 10) {
-            stats->category = CAT_NOMINAL;
         } else {
             stats->category = CAT_NOMINAL;
         }

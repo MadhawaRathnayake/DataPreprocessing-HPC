@@ -7,6 +7,8 @@ static int is_numeric(const char *str) {
     
     char *endptr;
     strtod(str, &endptr);
+
+        // Check if entire string was consumed and it's not just whitespace
     while (*endptr && isspace(*endptr)) endptr++;
     return *endptr == '\0';
 }
@@ -15,6 +17,7 @@ static int is_numeric(const char *str) {
 static int is_null(const char *str) {
     if (!str || strlen(str) == 0) return 1;
     
+    // Check for common null representations
     if (strcasecmp(str, "null") == 0 || strcasecmp(str, "na") == 0 ||
         strcasecmp(str, "n/a") == 0 || strcasecmp(str, "nan") == 0) {
         return 1;
@@ -23,12 +26,13 @@ static int is_null(const char *str) {
     return 0;
 }
 
-// Comparison functions
+// Comparison function for qsort (doubles)
 static int compare_doubles(const void *a, const void *b) {
     double diff = *(double*)a - *(double*)b;
     return (diff > 0) - (diff < 0);
 }
 
+// Comparison function for value counts
 static int compare_value_counts(const void *a, const void *b) {
     return ((ValueCount*)b)->count - ((ValueCount*)a)->count;
 }
@@ -77,6 +81,7 @@ void analyzer_omp_free_stats(DatasetStats *stats) {
 // Analyze a single column (same logic as serial but called in parallel)
 static void analyze_column(char **column_data, int num_rows, 
                           const char *col_name, ColumnStats *stats) {
+    // Initialize statistics
     stats->column_name = malloc(strlen(col_name) + 1);
     strcpy(stats->column_name, col_name);
     
@@ -89,6 +94,7 @@ static void analyze_column(char **column_data, int num_rows,
     stats->has_duplicates = 0;
     stats->type_consistent = 1;
     
+    // Temporary storage for analysis
     double *numeric_values = (double*)malloc(num_rows * sizeof(double));
     char **unique_values = (char**)malloc(num_rows * sizeof(char*));
     int *unique_counts = (int*)calloc(num_rows, sizeof(int));
@@ -104,6 +110,7 @@ static void analyze_column(char **column_data, int num_rows,
             continue;
         }
         
+        // Check if numeric
         if (is_numeric(value)) {
             numeric_values[numeric_count++] = atof(value);
         } else {
@@ -146,17 +153,21 @@ static void analyze_column(char **column_data, int num_rows,
     
     // Analyze numeric data
     if (stats->data_type == TYPE_NUMERIC && numeric_count > 0) {
+        // Sort numeric values for median and outlier detection
         qsort(numeric_values, numeric_count, sizeof(double), compare_doubles);
         
+        // Min and Max
         stats->min_value = numeric_values[0];
         stats->max_value = numeric_values[numeric_count - 1];
         
+        // Mean
         double sum = 0.0;
         for (int i = 0; i < numeric_count; i++) {
             sum += numeric_values[i];
         }
         stats->mean = sum / numeric_count;
         
+        // Median
         if (numeric_count % 2 == 0) {
             stats->median = (numeric_values[numeric_count/2 - 1] + 
                            numeric_values[numeric_count/2]) / 2.0;
@@ -164,13 +175,14 @@ static void analyze_column(char **column_data, int num_rows,
             stats->median = numeric_values[numeric_count/2];
         }
         
+        // Standard deviation
         double variance = 0.0;
         for (int i = 0; i < numeric_count; i++) {
             variance += pow(numeric_values[i] - stats->mean, 2);
         }
         stats->std_dev = sqrt(variance / numeric_count);
         
-        // Outlier detection
+        // Outlier detection using IQR method
         int q1_idx = numeric_count / 4;
         int q3_idx = (3 * numeric_count) / 4;
         double q1 = numeric_values[q1_idx];
@@ -179,6 +191,7 @@ static void analyze_column(char **column_data, int num_rows,
         double lower_bound = q1 - 1.5 * iqr;
         double upper_bound = q3 + 1.5 * iqr;
         
+        // Count and store outliers
         stats->outliers = (double*)malloc(MAX_OUTLIERS * sizeof(double));
         for (int i = 0; i < numeric_count && stats->outlier_count < MAX_OUTLIERS; i++) {
             if (numeric_values[i] < lower_bound || numeric_values[i] > upper_bound) {
@@ -187,6 +200,7 @@ static void analyze_column(char **column_data, int num_rows,
         }
         stats->has_outliers = (stats->outlier_count > 0);
         
+        // Determine category
         if (stats->unique_count == 2) {
             stats->category = CAT_BINARY;
         } else if (stats->unique_count < 10) {
@@ -195,13 +209,15 @@ static void analyze_column(char **column_data, int num_rows,
             stats->category = CAT_CONTINUOUS;
         }
     } else {
+        // Default values for non-numeric columns
         stats->min_value = 0.0;
         stats->max_value = 0.0;
         stats->mean = 0.0;
         stats->median = 0.0;
         stats->std_dev = 0.0;
         stats->outliers = NULL;
-        
+
+        // Determine categorical type
         if (stats->unique_count == 2) {
             stats->category = CAT_BINARY;
         } else {
@@ -213,14 +229,17 @@ static void analyze_column(char **column_data, int num_rows,
     stats->value_count_size = (stats->unique_count < 10) ? stats->unique_count : 10;
     stats->value_counts = (ValueCount*)malloc(stats->value_count_size * sizeof(ValueCount));
     
+    // Create temporary array for sorting
     ValueCount *temp_counts = (ValueCount*)malloc(stats->unique_count * sizeof(ValueCount));
     for (int i = 0; i < stats->unique_count; i++) {
         temp_counts[i].value = unique_values[i];
         temp_counts[i].count = unique_counts[i];
     }
     
+    // Sort by count descending
     qsort(temp_counts, stats->unique_count, sizeof(ValueCount), compare_value_counts);
     
+    // Copy top values
     for (int i = 0; i < stats->value_count_size; i++) {
         stats->value_counts[i].value = malloc(strlen(temp_counts[i].value) + 1);
         strcpy(stats->value_counts[i].value, temp_counts[i].value);
