@@ -54,6 +54,20 @@ cd ../..
 echo "✓ Preprocessor module built successfully"
 echo ""
 
+# Build CUDA Preprocessor (optional, requires CUDA nvcc)
+echo "Building CUDA Preprocessor module..."
+if command -v nvcc &> /dev/null; then
+    cd modules/preprocessor_cuda
+    make clean
+    make
+    cd ../..
+    echo "✓ CUDA Preprocessor built successfully"
+else
+    echo "⚠ Warning: nvcc not found. Skipping CUDA Preprocessor."
+    echo "  Install CUDA Toolkit or add nvcc to PATH to build CUDA support."
+fi
+echo ""
+
 # Build MPI Analyzer (optional, requires MPI)
 echo "Building MPI Analyzer module..."
 if command -v mpicc &> /dev/null; then

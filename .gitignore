@@ -11,6 +11,7 @@ __pycache__/
 .Python
 env/
 venv/
+.venv/
 .env/
 
 # Logs
@@ -28,3 +29,12 @@ Thumbs.db
 workplan.md
 data/large_dataset.csv
 data/hpc_preprocessing_dataset_100k.csv
+data/yellow_tripdata_*.csv
+data/yellow_tripdata_*.parquet
+
+# Standalone CUDA demo outputs
+standalone/cuda_cpu_hybrid_demo/hybrid_preprocess_demo
+standalone/cuda_cpu_hybrid_demo/gpu_only_preprocess_demo
+standalone/cuda_cpu_hybrid_demo/optimized_hybrid_preprocess_demo
+standalone/cuda_cpu_hybrid_demo/*thread_trace*.txt
+standalone/cuda_cpu_hybrid_demo/*.txt

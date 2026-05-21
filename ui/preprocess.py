@@ -24,7 +24,7 @@ from logging_config import get_logger
 class PreprocessingPipeline:
     """
     Main pipeline orchestrator that applies transformations using pure C code.
-    Supports three backends: Serial, OpenMP (parallel), MPI (distributed).
+    Supports four backends: Serial, OpenMP (parallel), MPI (distributed), CUDA (GPU).
     All transformations are performed in compiled C, bypassing Python GIL.
     """
     
@@ -34,7 +34,7 @@ class PreprocessingPipeline:
         -----------
         backend_lib : CAnalyzerLib (ignored - loads preprocessor library)
         backend_type : str
-            One of: "serial", "openmp", "mpi"
+            One of: "serial", "openmp", "mpi", "cuda"
         num_threads : int
             For OpenMP backend, number of threads to use
         num_processes : int
@@ -146,6 +146,14 @@ class PreprocessingPipeline:
                     byref(scaling_cfg) if scaling_cfg else None,
                     byref(encoding_cfg) if encoding_cfg else None
                 )
+
+            elif self.backend_type == "cuda":
+                c_result = self.lib.lib.preprocess_cuda(
+                    c_data_ptr, c_headers_ptr, num_rows, num_cols, remove_duplicates,
+                    byref(outlier_cfg) if outlier_cfg else None,
+                    byref(scaling_cfg) if scaling_cfg else None,
+                    byref(encoding_cfg) if encoding_cfg else None
+                )
             
             else:
                 raise ValueError(f"Unknown backend type: {self.backend_type}")
@@ -225,6 +233,9 @@ class PreprocessingPipeline:
         """Build C outlier config struct from Python dict"""
         if not config:
             return None
+
+        if config.get('treatment') == 'skip':
+            return None
         
         outlier_cfg = OutlierConfig()
         
@@ -251,6 +262,9 @@ class PreprocessingPipeline:
     def _build_scaling_config(self, config: Optional[Dict], headers: List[str]) -> Optional[ScalingConfig]:
         """Build C scaling config struct from Python dict"""
         if not config:
+            return None
+
+        if config.get('method') == 'skip':
             return None
         
         scaling_cfg = ScalingConfig()
@@ -282,7 +296,17 @@ class PreprocessingPipeline:
         # Columns to encode
         columns = config.get('columns', [])
         if not columns:
-            columns = config.get('column_methods', {}).keys() if isinstance(config.get('column_methods'), dict) else []
+            column_methods = config.get('column_methods', {})
+            if isinstance(column_methods, dict):
+                columns = [
+                    col for col, method in column_methods.items()
+                    if method and method.lower() != 'skip'
+                ]
+            else:
+                columns = []
+
+        if not columns:
+            return None
         
         encoding_cfg.num_columns = len(columns)
         encoding_cfg.columns = (c_char_p * len(columns))()

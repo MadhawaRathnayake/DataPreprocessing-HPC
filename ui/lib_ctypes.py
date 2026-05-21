@@ -5,6 +5,7 @@ Provides Python interfaces to:
 - libserialanalyzer.so (Serial analysis & preprocessing)
 - libompanalyzer.so  (OpenMP parallel analysis)
 - libmpianalyzer.so  (MPI parallel analysis)
+- libpreprocessor_cuda.so (CUDA preprocessing)
 """
 
 import ctypes
@@ -282,6 +283,23 @@ class CAnalyzerLib:
         self.lib.preprocess_to_json.argtypes = [POINTER(PreprocessedData)]
         self.lib.preprocess_to_json.restype = c_char_p
 
+    def _setup_cuda_preprocessor(self):
+        """Configure function signatures for CUDA preprocessor"""
+        if not self.lib:
+            return
+
+        self.lib.preprocess_cuda.argtypes = [
+            POINTER(c_char_p), POINTER(c_char_p), c_int, c_int, c_int,
+            POINTER(OutlierConfig), POINTER(ScalingConfig), POINTER(EncodingConfig)
+        ]
+        self.lib.preprocess_cuda.restype = POINTER(PreprocessedData)
+
+        self.lib.free_preprocessed_data.argtypes = [POINTER(PreprocessedData)]
+        self.lib.free_preprocessed_data.restype = None
+
+        self.lib.preprocess_to_json.argtypes = [POINTER(PreprocessedData)]
+        self.lib.preprocess_to_json.restype = c_char_p
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Library Factories
@@ -309,15 +327,19 @@ def load_mpi_analyzer(lib_dir):
 
 
 def load_preprocessor(lib_dir, variant="serial"):
-    """Load preprocessor library (serial, openmp, or mpi)"""
+    """Load preprocessor library (serial, openmp, mpi, or cuda)"""
     lib_map = {
         "serial": "libpreprocessor.so",
         "openmp": "libpreprocessor_omp.so",
         "mpi": "libpreprocessor_mpi.so",
+        "cuda": "libpreprocessor_cuda.so",
     }
     lib_name = lib_map.get(variant, "libpreprocessor.so")
     lib = CAnalyzerLib(Path(lib_dir) / lib_name)
-    lib._setup_preprocessor()
+    if variant == "cuda":
+        lib._setup_cuda_preprocessor()
+    else:
+        lib._setup_preprocessor()
     return lib
 
 
@@ -334,6 +356,11 @@ def load_openmp_preprocessor(lib_dir):
 def load_mpi_preprocessor(lib_dir):
     """Load MPI preprocessor library"""
     return load_preprocessor(lib_dir, "mpi")
+
+
+def load_cuda_preprocessor(lib_dir):
+    """Load CUDA preprocessor library"""
+    return load_preprocessor(lib_dir, "cuda")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
