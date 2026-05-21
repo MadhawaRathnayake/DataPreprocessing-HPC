@@ -22,9 +22,6 @@ static char* trim_whitespace(char *str) {
 static int parse_csv_line(char *line, char **fields, int max_fields) {
     int field_count = 0;
     char *ptr = line;
-    char *field_start;
-    int in_quotes = 0;
-    int i = 0;
     
     char buffer[MAX_CELL_LENGTH];
     int buf_idx = 0;
@@ -37,7 +34,6 @@ static int parse_csv_line(char *line, char **fields, int max_fields) {
         
         // Check if field starts with quote
         if (*ptr == '"') {
-            in_quotes = 1;
             ptr++;
             
             while (*ptr) {
@@ -48,7 +44,6 @@ static int parse_csv_line(char *line, char **fields, int max_fields) {
                         ptr += 2;
                     } else {
                         // End of quoted field
-                        in_quotes = 0;
                         ptr++;
                         break;
                     }
