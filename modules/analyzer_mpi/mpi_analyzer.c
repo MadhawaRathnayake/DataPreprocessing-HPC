@@ -256,41 +256,168 @@ static void analyze_column(char **column_data, int num_rows,
     free(numeric_values);
 }
 
+// Helper to send ColumnStats from non-root to root
+static void send_column_results(ColumnStats *col, int dest) {
+    // 1. Send basic fields (ints and doubles)
+    int basic_ints[7] = {
+        (int)col->data_type,
+        (int)col->category,
+        col->total_count,
+        col->null_count,
+        col->unique_count,
+        col->outlier_count,
+        col->value_count_size
+    };
+    MPI_Send(basic_ints, 7, MPI_INT, dest, 0, MPI_COMM_WORLD);
+
+    double basic_doubles[6] = {
+        col->null_percentage,
+        col->min_value,
+        col->max_value,
+        col->mean,
+        col->median,
+        col->std_dev
+    };
+    MPI_Send(basic_doubles, 6, MPI_DOUBLE, dest, 1, MPI_COMM_WORLD);
+
+    int flags[4] = {
+        col->has_nulls,
+        col->has_outliers,
+        col->has_duplicates,
+        col->type_consistent
+    };
+    MPI_Send(flags, 4, MPI_INT, dest, 2, MPI_COMM_WORLD);
+
+    // 2. Send outliers
+    if (col->outlier_count > 0) {
+        MPI_Send(col->outliers, col->outlier_count, MPI_DOUBLE, dest, 3, MPI_COMM_WORLD);
+    }
+
+    // 3. Send value counts
+    for (int i = 0; i < col->value_count_size; i++) {
+        int val_len = strlen(col->value_counts[i].value) + 1;
+        MPI_Send(&val_len, 1, MPI_INT, dest, 4, MPI_COMM_WORLD);
+        MPI_Send(col->value_counts[i].value, val_len, MPI_CHAR, dest, 5, MPI_COMM_WORLD);
+        MPI_Send(&col->value_counts[i].count, 1, MPI_INT, dest, 6, MPI_COMM_WORLD);
+    }
+}
+
+// Helper to receive ColumnStats on root
+static void recv_column_results(ColumnStats *col, int src) {
+    int basic_ints[7];
+    MPI_Recv(basic_ints, 7, MPI_INT, src, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+    col->data_type = (DataType)basic_ints[0];
+    col->category = (Category)basic_ints[1];
+    col->total_count = basic_ints[2];
+    col->null_count = basic_ints[3];
+    col->unique_count = basic_ints[4];
+    col->outlier_count = basic_ints[5];
+    col->value_count_size = basic_ints[6];
+
+    double basic_doubles[6];
+    MPI_Recv(basic_doubles, 6, MPI_DOUBLE, src, 1, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+    col->null_percentage = basic_doubles[0];
+    col->min_value = basic_doubles[1];
+    col->max_value = basic_doubles[2];
+    col->mean = basic_doubles[3];
+    col->median = basic_doubles[4];
+    col->std_dev = basic_doubles[5];
+
+    int flags[4];
+    MPI_Recv(flags, 4, MPI_INT, src, 2, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+    col->has_nulls = flags[0];
+    col->has_outliers = flags[1];
+    col->has_duplicates = flags[2];
+    col->type_consistent = flags[3];
+
+    if (col->outlier_count > 0) {
+        col->outliers = (double*)malloc(col->outlier_count * sizeof(double));
+        MPI_Recv(col->outliers, col->outlier_count, MPI_DOUBLE, src, 3, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+    } else {
+        col->outliers = NULL;
+    }
+
+    if (col->value_count_size > 0) {
+        col->value_counts = (ValueCount*)malloc(col->value_count_size * sizeof(ValueCount));
+        for (int i = 0; i < col->value_count_size; i++) {
+            int val_len;
+            MPI_Recv(&val_len, 1, MPI_INT, src, 4, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+            col->value_counts[i].value = (char*)malloc(val_len);
+            MPI_Recv(col->value_counts[i].value, val_len, MPI_CHAR, src, 5, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+            MPI_Recv(&col->value_counts[i].count, 1, MPI_INT, src, 6, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        }
+    } else {
+        col->value_counts = NULL;
+    }
+}
+
 int analyzer_mpi_analyze_dataset(char **data, char **headers, int num_rows, 
                                  int num_cols, DatasetStats *stats) {
     if (!data || !headers || !stats) return -1;
     
-    // Note: In a full MPI implementation, we would:
-    // 1. MPI_Init() - Initialize MPI
-    // 2. Get rank and size
-    // 3. Distribute columns across processes
-    // 4. Each process analyzes its columns
-    // 5. Gather results back to root
-    // 6. MPI_Finalize()
+    int rank, size;
+    int initialized;
     
-    // For this placeholder, we'll just simulate with timing
-    printf("Starting MPI analysis (simulated) on %d rows x %d columns...\n", 
-           num_rows, num_cols);
+    MPI_Initialized(&initialized);
+    if (!initialized) {
+        MPI_Init(NULL, NULL);
+    }
+    
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &size);
+    
+    if (rank == 0) {
+        printf("Starting MPI distributed analysis with %d processes on %d rows x %d columns...\n", 
+               size, num_rows, num_cols);
+    }
     
     double start = MPI_Wtime();
     
+    // Distribute columns across processes using cyclic distribution
     for (int col = 0; col < num_cols; col++) {
-        char **column_data = (char**)malloc(num_rows * sizeof(char*));
-        for (int row = 0; row < num_rows; row++) {
-            column_data[row] = data[row * num_cols + col];
+        if (col % size == rank) {
+            char **column_data = (char**)malloc(num_rows * sizeof(char*));
+            for (int row = 0; row < num_rows; row++) {
+                column_data[row] = data[row * num_cols + col];
+            }
+            
+            analyze_column(column_data, num_rows, headers[col], &stats->columns[col]);
+            free(column_data);
+            
+            printf("[Rank %d] Analyzed column %d/%d: %s\n", 
+                   rank, col + 1, num_cols, headers[col]);
         }
-        
-        analyze_column(column_data, num_rows, headers[col], &stats->columns[col]);
-        free(column_data);
-        
-        printf("Analyzed column %d/%d: %s\n", col + 1, num_cols, headers[col]);
+    }
+    
+    // Synchronize processes before gathering
+    MPI_Barrier(MPI_COMM_WORLD);
+    
+    // Gather all results to rank 0
+    for (int col = 0; col < num_cols; col++) {
+        int owner = col % size;
+        if (rank == 0) {
+            if (owner != 0) {
+                recv_column_results(&stats->columns[col], owner);
+                // Set column name on root since it wasn't analyzed here
+                stats->columns[col].column_name = malloc(strlen(headers[col]) + 1);
+                strcpy(stats->columns[col].column_name, headers[col]);
+            }
+        } else {
+            if (owner == rank) {
+                send_column_results(&stats->columns[col], 0);
+            }
+        }
     }
     
     double end = MPI_Wtime();
     stats->processing_time = end - start;
-    stats->num_processes = 1;  // Would be MPI_Comm_size in full implementation
+    stats->num_processes = size;
     
-    printf("MPI analysis completed in %.4f seconds.\n", stats->processing_time);
+    if (rank == 0) {
+        printf("MPI analysis completed in %.4f seconds using %d processes.\n", 
+               stats->processing_time, stats->num_processes);
+    }
+    
     return 0;
 }
 
