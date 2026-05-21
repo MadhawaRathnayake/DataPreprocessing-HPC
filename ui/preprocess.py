@@ -166,6 +166,13 @@ class PreprocessingPipeline:
             self.metrics.record_scaling(metrics['columns_scaled'])
             self.metrics.record_encoding(metrics['columns_encoded'])
             
+            # Record stage timings (converted to seconds for MetricsCollector)
+            self.metrics.metrics.duplicates_time = metrics.get('duplicates_time_ms', 0) / 1000.0
+            self.metrics.metrics.missing_time = metrics.get('missing_time_ms', 0) / 1000.0
+            self.metrics.metrics.outliers_time = metrics.get('outliers_time_ms', 0) / 1000.0
+            self.metrics.metrics.scaling_time = metrics.get('scaling_time_ms', 0) / 1000.0
+            self.metrics.metrics.encoding_time = metrics.get('encoding_time_ms', 0) / 1000.0
+            
             # Record output shape and timing
             self.metrics.set_output_shape(result_dict['num_rows'], result_dict['num_cols'])
             self.metrics.end_timer(timer_start)

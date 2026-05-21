@@ -137,12 +137,18 @@ PreprocessedData._fields_ = [
     ("num_rows", c_int),                  # Number of rows after processing
     ("num_cols", c_int),                  # Number of columns (unchanged)
     ("headers", POINTER(c_char_p)),       # Column headers
+    ("rows_removed", c_int),              # Total rows removed
     ("duplicates_found", c_int),          # Metrics: rows removed as duplicates
     ("missing_filled", c_int),            # Metrics: missing values imputed
     ("outliers_removed", c_int),          # Metrics: outlier rows removed
     ("columns_scaled", c_int),            # Metrics: columns normalized
     ("columns_encoded", c_int),           # Metrics: columns with label encoding
     ("processing_time_ms", c_double),     # Total processing time in milliseconds
+    ("duplicates_time_ms", c_double),
+    ("missing_time_ms", c_double),
+    ("outliers_time_ms", c_double),
+    ("scaling_time_ms", c_double),
+    ("encoding_time_ms", c_double),
 ]
 
 
@@ -444,6 +450,11 @@ def c_preprocessed_data_to_python(c_result):
             'columns_scaled': result.columns_scaled,
             'columns_encoded': result.columns_encoded,
             'processing_time_ms': result.processing_time_ms,
+            'duplicates_time_ms': result.duplicates_time_ms,
+            'missing_time_ms': result.missing_time_ms,
+            'outliers_time_ms': result.outliers_time_ms,
+            'scaling_time_ms': result.scaling_time_ms,
+            'encoding_time_ms': result.encoding_time_ms,
         }
     }
 

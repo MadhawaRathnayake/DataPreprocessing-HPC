@@ -26,6 +26,11 @@ typedef struct {
     int columns_scaled;    /* Number of columns scaled */
     int columns_encoded;   /* Number of columns encoded */
     double processing_time_ms;
+    double duplicates_time_ms;
+    double missing_time_ms;
+    double outliers_time_ms;
+    double scaling_time_ms;
+    double encoding_time_ms;
 } PreprocessedData;
 
 typedef struct {
