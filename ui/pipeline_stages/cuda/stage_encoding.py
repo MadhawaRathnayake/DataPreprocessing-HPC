@@ -41,8 +41,10 @@ class StageEncoding:
         }
 
     def get_status(self):
-        if not self._col_rows:
+        if not self.app.csv_data:
             return "pending"
+        if not self._col_rows:
+            return "configured"
         if all(v.get() == "Skip" for v in self._col_rows.values()):
             return "skipped"
         return "configured"

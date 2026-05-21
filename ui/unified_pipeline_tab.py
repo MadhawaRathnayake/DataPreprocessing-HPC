@@ -68,6 +68,9 @@ class UnifiedPipelineTab(BaseTab):
         
         # Build initial pipeline with default method
         self._load_pipeline()
+        
+        # Select and display the first stage initially
+        self._select_stage(0)
 
     def _build_method_selector(self):
         """Build the top method selector bar."""
