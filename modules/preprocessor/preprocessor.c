@@ -526,6 +526,13 @@ PreprocessedData* preprocess_serial(
     result->columns_scaled = 0;
     result->columns_encoded = 0;
     
+    /* Initialize timing fields */
+    result->duplicates_time_ms = 0.0;
+    result->missing_time_ms = 0.0;
+    result->outliers_time_ms = 0.0;
+    result->scaling_time_ms = 0.0;
+    result->encoding_time_ms = 0.0;
+    
     /* Copy headers */
     result->headers = (char**)malloc(num_cols * sizeof(char*));
     for (int i = 0; i < num_cols; i++) {
@@ -546,36 +553,51 @@ PreprocessedData* preprocess_serial(
     /* Stage 1: Remove duplicates */
     if (should_remove_duplicates) {
         log_msg("[STAGE1] Starting remove_duplicates: %d rows", result->num_rows);
+        clock_t stage_start = clock();
         data = remove_duplicates(data, &result->num_rows, num_cols, &result->duplicates_found);
-        log_msg("[STAGE1] Completed: %d rows remaining, %d duplicates found", result->num_rows, result->duplicates_found);
+        result->duplicates_time_ms = (clock() - stage_start) * 1000.0 / CLOCKS_PER_SEC;
+        log_msg("[STAGE1] Completed: %d rows remaining, %d duplicates found (%.2f ms)", 
+                result->num_rows, result->duplicates_found, result->duplicates_time_ms);
         result->rows_removed += result->duplicates_found;
     }
     
     /* Stage 2: Impute missing values */
     log_msg("[STAGE2] Starting impute_missing_values: %d rows", result->num_rows);
+    clock_t stage_start_missing = clock();
     impute_missing_values(data, result->num_rows, headers, num_cols, &result->missing_filled);
-    log_msg("[STAGE2] Completed: %d values filled", result->missing_filled);
+    result->missing_time_ms = (clock() - stage_start_missing) * 1000.0 / CLOCKS_PER_SEC;
+    log_msg("[STAGE2] Completed: %d values filled (%.2f ms)", 
+            result->missing_filled, result->missing_time_ms);
     
     /* Stage 3: Remove outliers */
     if (outlier_cfg) {
         log_msg("[STAGE3] Starting remove_outliers: %d rows", result->num_rows);
+        clock_t stage_start_outliers = clock();
         data = remove_outliers(data, &result->num_rows, headers, num_cols, outlier_cfg, &result->outliers_removed);
-        log_msg("[STAGE3] Completed: %d rows remaining, %d outliers removed", result->num_rows, result->outliers_removed);
+        result->outliers_time_ms = (clock() - stage_start_outliers) * 1000.0 / CLOCKS_PER_SEC;
+        log_msg("[STAGE3] Completed: %d rows remaining, %d outliers removed (%.2f ms)", 
+                result->num_rows, result->outliers_removed, result->outliers_time_ms);
         result->rows_removed += result->outliers_removed;
     }
     
     /* Stage 4: Scale columns */
     if (scaling_cfg) {
         log_msg("[STAGE4] Starting scale_columns: %d rows", result->num_rows);
+        clock_t stage_start_scaling = clock();
         scale_columns(data, result->num_rows, headers, num_cols, scaling_cfg, &result->columns_scaled);
-        log_msg("[STAGE4] Completed: %d columns scaled", result->columns_scaled);
+        result->scaling_time_ms = (clock() - stage_start_scaling) * 1000.0 / CLOCKS_PER_SEC;
+        log_msg("[STAGE4] Completed: %d columns scaled (%.2f ms)", 
+                result->columns_scaled, result->scaling_time_ms);
     }
     
     /* Stage 5: Encode categorical columns */
     if (encoding_cfg) {
         log_msg("[STAGE5] Starting encode_columns: %d rows", result->num_rows);
+        clock_t stage_start_encoding = clock();
         encode_columns(data, result->num_rows, headers, num_cols, encoding_cfg, &result->columns_encoded);
-        log_msg("[STAGE5] Completed: %d columns encoded", result->columns_encoded);
+        result->encoding_time_ms = (clock() - stage_start_encoding) * 1000.0 / CLOCKS_PER_SEC;
+        log_msg("[STAGE5] Completed: %d columns encoded (%.2f ms)", 
+                result->columns_encoded, result->encoding_time_ms);
     }
     
     result->data = data;
@@ -603,8 +625,8 @@ void free_preprocessed_data(PreprocessedData *data) {
 
 /* Convert to JSON for reporting */
 char* preprocess_to_json(PreprocessedData *data) {
-    char *json = (char*)malloc(2048 * sizeof(char));
-    snprintf(json, 2048,
+    char *json = (char*)malloc(4096 * sizeof(char));
+    snprintf(json, 4096,
         "{"
         "\"rows_after\": %d, "
         "\"rows_removed\": %d, "
@@ -613,7 +635,12 @@ char* preprocess_to_json(PreprocessedData *data) {
         "\"outliers_removed\": %d, "
         "\"columns_scaled\": %d, "
         "\"columns_encoded\": %d, "
-        "\"processing_time_ms\": %.2f"
+        "\"processing_time_ms\": %.2f, "
+        "\"duplicates_time_ms\": %.2f, "
+        "\"missing_time_ms\": %.2f, "
+        "\"outliers_time_ms\": %.2f, "
+        "\"scaling_time_ms\": %.2f, "
+        "\"encoding_time_ms\": %.2f"
         "}",
         data->num_rows,
         data->rows_removed,
@@ -622,7 +649,12 @@ char* preprocess_to_json(PreprocessedData *data) {
         data->outliers_removed,
         data->columns_scaled,
         data->columns_encoded,
-        data->processing_time_ms
+        data->processing_time_ms,
+        data->duplicates_time_ms,
+        data->missing_time_ms,
+        data->outliers_time_ms,
+        data->scaling_time_ms,
+        data->encoding_time_ms
     );
     return json;
 }

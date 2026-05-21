@@ -44,6 +44,8 @@ class StageDuplicates:
         }
 
     def get_status(self):
+        if not self.app.csv_data:
+            return "pending"
         if self._action.get() == "skip":
             return "skipped"
         return "configured"
