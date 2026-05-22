@@ -72,7 +72,6 @@ data_preprocessing_app/
 │   ├── openmp_pipeline_tab.py      ← "OpenMP Parallel" tab (7-stage pipeline)
 │   ├── mpi_pipeline_tab.py         ← "MPI Parallel" tab (7-stage pipeline)
 │   ├── cuda_pipeline_tab.py        ← "CUDA Parallel" tab (UI only — backend planned)
-│   ├── export_tab.py               ← "Export" tab (placeholder)
 │   ├── __init__.py
 │   └── pipeline_stages/            ← Pipeline stage UI components
 │       ├── series/                 ← Serial stage classes (UI + Python placeholder logic)
@@ -391,13 +390,6 @@ dialog with planned implementation details (modules/analyzer_cuda/, nvcc compile
 
 ---
 
-### 5.8 ExportTab — `ui/export_tab.py`
-
-**Placeholder only**. Shows planned features list with disabled buttons.
-Planned: Export to CSV, Excel, JSON; PDF report generation.
-
----
-
 ## 6. Data Flow (End-to-End)
 
 ```
@@ -569,6 +561,6 @@ sudo apt-get install build-essential python3 python3-tk libopenmpi-dev
 3. **CUDA backend not implemented**: `pipeline_stages/cuda/stage_apply.py` shows a
    "not implemented" dialog. Requires `modules/analyzer_cuda/`, nvcc, and CUDA toolkit.
 4. **Memory**: Entire CSV loaded into RAM — no streaming support.
-5. **CSV only**: No Excel/JSON import yet.
-6. **Export tab**: Placeholder only, no export implemented.
-7. **Display limit**: Preview shows first 15 rows only (C `csv_get_preview` takes `num_rows` param).
+5. CSV only: No Excel/JSON import yet.
+6. Display limit: Preview shows first 15 rows only (C `csv_get_preview` takes `num_rows` param).
+

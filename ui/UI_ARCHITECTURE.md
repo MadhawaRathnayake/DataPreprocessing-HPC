@@ -15,7 +15,6 @@ ui/
 ├── serial_analyzer_tab.py      # Serial analyzer tab
 ├── openmp_analyzer_tab.py      # OpenMP analyzer tab
 ├── mpi_analyzer_tab.py         # MPI analyzer tab
-├── export_tab.py               # Export tab implementation
 └── main_app_old.py             # Old monolithic version (backup)
 ```
 
@@ -174,20 +173,6 @@ class MyTab(BaseTab):
 - Currently simplified implementation
 - Framework ready for full MPI distribution
 
-### 7. `export_tab.py` - Export Tab
-
-**Purpose**: Data export functionality (placeholder)
-
-**Key Features**:
-- Planned features list
-- Disabled export buttons
-- Future implementation placeholder
-
-**Planned Features**:
-- Export to CSV, Excel, JSON
-- PDF report generation
-- Custom column selection
-
 ## Communication Between Components
 
 ### Application Context Pattern
@@ -323,7 +308,6 @@ The original `main_app.py` (700+ lines) has been refactored into:
 - `serial_analyzer_tab.py` (~160 lines) - Serial analysis
 - `openmp_analyzer_tab.py` (~170 lines) - OpenMP analysis
 - `mpi_analyzer_tab.py` (~150 lines) - MPI analysis
-- `export_tab.py` (~70 lines) - Export placeholder
 
 **Result**: 
 - More organized code

@@ -23,9 +23,9 @@ ui/
 ├── import_tab.py                  # Import functionality
 ├── serial_analyzer_tab.py         # Serial analysis
 ├── openmp_analyzer_tab.py         # OpenMP analysis
-├── mpi_analyzer_tab.py            # MPI analysis
-├── export_tab.py                  # Export functionality
-├── UI_ARCHITECTURE.md             # Architecture docs
+├── mpi_analyzer_tab.py         # MPI analysis
+└── UI_ARCHITECTURE.md          # Architecture docs
+
 └── MODULAR_STRUCTURE.md           # Visual diagrams
 ```
 
@@ -138,14 +138,6 @@ class BaseTab:
 - Process information
 - Educational notes
 - Future-ready structure
-
-### `export_tab.py` (70 lines)
-**Purpose**: Export functionality placeholder
-
-**Features**:
-- Planned features list
-- UI skeleton
-- Ready for implementation
 
 ## New Architecture Pattern
 

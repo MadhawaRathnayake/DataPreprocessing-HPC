@@ -21,11 +21,11 @@
     ├──────────────────┬──────────────────────────┤
     │                  │                          │
     ▼                  ▼                          ▼
-┌─────────┐      ┌──────────┐            ┌──────────────┐
-│ Import  │      │  Serial  │     ...    │   Export     │
-│   Tab   │      │ Analyzer │            │     Tab      │
-│         │      │   Tab    │            │              │
-└────┬────┘      └────┬─────┘            └──────┬───────┘
+┌─────────┐      ┌──────────┐ 
+│ Import  │      │  Serial  │     ... 
+│   Tab   │      │ Analyzer │         
+│         │      │   Tab    │         
+└────┬────┘      └────┬─────┘         
      │                │                          │
      │                │                          │
      └────────────────┴──────────────────────────┘
@@ -52,8 +52,7 @@ ui/
 ├── import_tab.py            ← Import functionality
 ├── serial_analyzer_tab.py   ← Serial analysis
 ├── openmp_analyzer_tab.py   ← OpenMP analysis
-├── mpi_analyzer_tab.py      ← MPI analysis
-└── export_tab.py            ← Export functionality
+└── mpi_analyzer_tab.py      ← MPI analysis
 
 
 Data Flow:
@@ -83,7 +82,7 @@ Data Flow:
 ┌────────────────────┐
 │   Other Tabs       │
 │   (Serial, OpenMP, │
-│    MPI, Export)    │
+│    MPI)            │
 └────────────────────┘
 
 
