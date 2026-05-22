@@ -57,7 +57,7 @@ echo ""
 # Build CUDA Preprocessor (optional, requires CUDA nvcc)
 echo "Building CUDA Preprocessor module..."
 if command -v nvcc &> /dev/null; then
-    cd modules/preprocessor_cuda
+    cd modules/analyzer_cuda
     make clean
     make
     cd ../..

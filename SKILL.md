@@ -52,7 +52,7 @@ data_preprocessing_app/
 │   │   ├── mpi_analyzer.h
 │   │   ├── mpi_analyzer.c          ← Uses mpi.h (simplified, single-process)
 │   │   └── Makefile                ← mpicc → lib/libmpianalyzer.so
-│   └── preprocessor_cuda/          ← CUDA preprocessing backend
+│   └── analyzer_cuda/              ← CUDA preprocessing backend
 │       ├── cuda_preprocessor.cu    ← CUDA preprocessing kernels
 │       └── Makefile                ← nvcc → lib/libpreprocessor_cuda.so
 │
@@ -114,7 +114,7 @@ Compiles all C modules in order:
 2. `modules/series_processing/` → `lib/libserialanalyzer.so`  *(was `analyzer_serial/`)*
 3. `modules/analyzer_openmp/` → `lib/libompanalyzer.so`
 4. `modules/analyzer_mpi/` → `lib/libmpianalyzer.so` (skipped if `mpicc` absent)
-5. `modules/preprocessor_cuda/` → `lib/libpreprocessor_cuda.so` (skipped if `nvcc` absent)
+5. `modules/analyzer_cuda/` → `lib/libpreprocessor_cuda.so` (skipped if `nvcc` absent)
 
 **GCC Flags used**: `-Wall -O2 -fPIC -fopenmp -lm`
 - `-fPIC` is required for shared libraries
@@ -384,7 +384,7 @@ Left rail label shows `[MPI]`. `stage_apply.py` banner shows MPI backend info + 
 
 **UI**: Identical 7-stage pipeline layout.  
 Left rail label shows `[CUDA]`. `stage_apply.py` runs the CUDA preprocessor backend.  
-**Backend**: `modules/preprocessor_cuda/` built as `lib/libpreprocessor_cuda.so`.
+**Backend**: `modules/analyzer_cuda/` built as `lib/libpreprocessor_cuda.so`.
 
 ---
 
@@ -557,7 +557,7 @@ sudo apt-get install build-essential python3 python3-tk libopenmpi-dev
    block showing exactly where the C ctypes call goes. See the `stage_apply.py` in
    `pipeline_stages/series/`, `pipeline_stages/openmp/`, and `pipeline_stages/mpi/`.
 3. **CUDA backend runtime**: `pipeline_stages/cuda/stage_apply.py` requires
-   `modules/preprocessor_cuda/`, nvcc, CUDA toolkit, and a shared library built for the host OS.
+   `modules/analyzer_cuda/`, nvcc, CUDA toolkit, and a shared library built for the host OS.
 4. **Memory**: Entire CSV loaded into RAM — no streaming support.
 5. CSV only: No Excel/JSON import yet.
 6. Display limit: Preview shows first 15 rows only (C `csv_get_preview` takes `num_rows` param).

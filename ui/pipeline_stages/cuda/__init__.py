@@ -1,6 +1,6 @@
 """
 pipeline_stages.cuda - CUDA parallel preprocessing stages.
-Backend: modules/preprocessor_cuda/ (libpreprocessor_cuda.so via ctypes).
+Backend: modules/analyzer_cuda/ (libpreprocessor_cuda.so via ctypes).
 """
 from .stage_overview import StageOverview
 from .stage_duplicates import StageDuplicates

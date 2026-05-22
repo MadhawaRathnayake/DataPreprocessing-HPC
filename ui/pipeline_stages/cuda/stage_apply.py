@@ -65,7 +65,7 @@ class StageApply:
         ttk.Label(
             info,
             text=(
-                "Backend: modules/preprocessor_cuda -> libpreprocessor_cuda.so\n"
+                "Backend: modules/analyzer_cuda -> libpreprocessor_cuda.so\n"
                 "GPU path: numeric column min/max reductions and min-max scaling\n"
                 "CPU path: CSV row preparation, type detection, and UI result assembly"
             ),

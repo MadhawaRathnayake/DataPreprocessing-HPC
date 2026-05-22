@@ -1,5 +1,7 @@
 #include <cuda_runtime.h>
 
+#include "cuda_preprocessor.h"
+
 #include <algorithm>
 #include <cfloat>
 #include <cmath>
@@ -14,43 +16,6 @@
 #include <vector>
 
 #define THREADS_PER_BLOCK 256
-
-extern "C" {
-
-typedef struct {
-    int method;          /* 0=IQR, 1=Z-score */
-    int treatment;       /* 0=remove, 1=cap, 2=flag */
-    char **columns;
-    int num_columns;
-    double threshold;
-} OutlierConfig;
-
-typedef struct {
-    int method;          /* 0=minmax, 1=zscore, 2=robust */
-    char **columns;
-    int num_columns;
-} ScalingConfig;
-
-typedef struct {
-    int method;          /* 0=label, 1=onehot */
-    char **columns;
-    int num_columns;
-} EncodingConfig;
-
-typedef struct {
-    char **data;
-    int num_rows;
-    int num_cols;
-    char **headers;
-    int duplicates_found;
-    int missing_filled;
-    int outliers_removed;
-    int columns_scaled;
-    int columns_encoded;
-    double processing_time_ms;
-} PreprocessedData;
-
-}
 
 struct NumericStats {
     double min_value = 0.0;
