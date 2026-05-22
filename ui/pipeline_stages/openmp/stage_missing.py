@@ -177,11 +177,14 @@ class StageMissing:
             fill_entry.pack(side="left", padx=4)
 
             # Show/hide fill entry
-            def _toggle_fill(var=strat_var, entry=fill_entry, *_):
-                entry.configure(state="normal" if var.get() == STRATEGY_CONST else "disabled")
+            def make_toggle(v, e):
+                def _toggle(*_):
+                    e.configure(state="normal" if v.get() == STRATEGY_CONST else "disabled")
+                return _toggle
 
-            strat_var.trace_add("write", _toggle_fill)
-            _toggle_fill()
+            toggle_func = make_toggle(strat_var, fill_entry)
+            strat_var.trace_add("write", toggle_func)
+            toggle_func()
 
             self._col_rows[col] = {"strategy": strat_var, "fill": fill_var}
 
