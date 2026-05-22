@@ -257,15 +257,14 @@ class PreprocessingPipeline:
     
     def _build_scaling_config(self, config: Optional[Dict], headers: List[str]) -> Optional[ScalingConfig]:
         """Build C scaling config struct from Python dict"""
-        if not config:
+        if not config or config.get('method') == 'skip':
             return None
-        
+
         scaling_cfg = ScalingConfig()
-        
+
         # Method: 0=min-max, 1=z-score, 2=standard
         method_str = config.get('method', 'minmax').lower()
         scaling_cfg.method = {'minmax': 0, 'zscore': 1, 'standard': 2}.get(method_str, 0)
-        
         # Columns to scale
         columns = config.get('columns', headers)
         scaling_cfg.num_columns = len(columns)

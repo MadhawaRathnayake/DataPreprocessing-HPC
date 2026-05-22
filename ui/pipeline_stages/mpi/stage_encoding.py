@@ -34,6 +34,18 @@ class StageEncoding:
     def refresh(self):
         self._rebuild_col_table()
 
+    def set_config(self, config):
+        if not config:
+            return
+        if "drop_original" in config:
+            self._drop_original.set(config["drop_original"])
+        if "column_methods" in config:
+            self._selected_columns_to_restore = config["column_methods"]
+            # Apply immediately if variables exist
+            for col, method in config["column_methods"].items():
+                if col in self._col_rows:
+                    self._col_rows[col].set(method)
+
     def get_config(self):
         return {
             "drop_original": self._drop_original.get(),
@@ -101,6 +113,15 @@ class StageEncoding:
                   style="Muted.TLabel").pack(anchor="w", padx=4, pady=4)
 
     def _rebuild_col_table(self):
+        # Save old selections
+        old_selections = {col: var.get() for col, var in self._col_rows.items()}
+        
+        # Check for restore list from set_config
+        restore_map = None
+        if hasattr(self, "_selected_columns_to_restore"):
+            restore_map = self._selected_columns_to_restore
+            delattr(self, "_selected_columns_to_restore")
+
         for w in self._inner.winfo_children():
             w.destroy()
         self._col_rows.clear()
@@ -123,7 +144,12 @@ class StageEncoding:
             row_frame = ttk.Frame(self._inner)
             row_frame.pack(fill="x", pady=2)
 
-            method_var = tk.StringVar(value="Label encode")
+            if restore_map is not None and col in restore_map:
+                val = restore_map[col]
+            else:
+                val = old_selections.get(col, "Label encode")
+            
+            method_var = tk.StringVar(value=val)
             self._col_rows[col] = method_var
 
             ttk.Label(row_frame, text=col, width=24).pack(side="left")

@@ -36,6 +36,23 @@ class StageDuplicates:
         self._rebuild_col_list()
         self._on_action_change()
 
+    def set_config(self, config):
+        if not config:
+            return
+        if "action" in config:
+            self._action.set(config["action"])
+        if "keep" in config:
+            self._keep.set(config["keep"])
+        if "col_subset" in config:
+            self._selected_columns_to_restore = config["col_subset"]
+            # Apply immediately if variables exist
+            for col in config["col_subset"]:
+                if col in self._col_vars:
+                    self._col_vars[col].set(True)
+            for col, var in self._col_vars.items():
+                if col not in config["col_subset"]:
+                    var.set(False)
+
     def get_config(self):
         return {
             "action":        self._action.get(),
@@ -44,8 +61,6 @@ class StageDuplicates:
         }
 
     def get_status(self):
-        if not self.app.csv_data:
-            return "pending"
         if self._action.get() == "skip":
             return "skipped"
         return "configured"
@@ -101,6 +116,15 @@ class StageDuplicates:
         self._no_data_label.pack(anchor="w")
 
     def _rebuild_col_list(self):
+        # Save old selections
+        old_selections = {col: var.get() for col, var in self._col_vars.items()}
+        
+        # Check for restore list from set_config
+        restore_list = None
+        if hasattr(self, "_selected_columns_to_restore"):
+            restore_list = self._selected_columns_to_restore
+            delattr(self, "_selected_columns_to_restore")
+
         for w in self._col_check_frame.winfo_children():
             w.destroy()
         self._col_vars.clear()
@@ -115,7 +139,12 @@ class StageDuplicates:
         # Two-column grid of checkboxes
         headers = csv["headers"]
         for idx, col in enumerate(headers):
-            var = tk.BooleanVar(value=False)
+            if restore_list is not None:
+                val = (col in restore_list)
+            else:
+                val = old_selections.get(col, False)
+            
+            var = tk.BooleanVar(value=val)
             self._col_vars[col] = var
             row, col_pos = divmod(idx, 3)
             cb = ttk.Checkbutton(self._col_check_frame, text=col, variable=var)

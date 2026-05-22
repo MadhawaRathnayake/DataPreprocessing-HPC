@@ -11,6 +11,7 @@ Users can select which processing method to use:
 import tkinter as tk
 from tkinter import ttk, messagebox
 import sys, os
+import importlib
 sys.path.insert(0, os.path.dirname(__file__))
 
 from base_tab import BaseTab
@@ -218,15 +219,24 @@ class UnifiedPipelineTab(BaseTab):
         
         # Dynamically import stage modules
         try:
-            stage_overview = __import__(f"{module_name}.stage_overview", fromlist=["StageOverview"]).StageOverview
-            stage_duplicates = __import__(f"{module_name}.stage_duplicates", fromlist=["StageDuplicates"]).StageDuplicates
-            stage_missing = __import__(f"{module_name}.stage_missing", fromlist=["StageMissing"]).StageMissing
-            stage_outliers = __import__(f"{module_name}.stage_outliers", fromlist=["StageOutliers"]).StageOutliers
-            stage_scaling = __import__(f"{module_name}.stage_scaling", fromlist=["StageScaling"]).StageScaling
-            stage_encoding = __import__(f"{module_name}.stage_encoding", fromlist=["StageEncoding"]).StageEncoding
-            stage_apply = __import__(f"{module_name}.stage_apply", fromlist=["StageApply"]).StageApply
-        except ImportError as e:
+            # We use importlib to ensure we can reload modules if they change on disk
+            def get_stage_class(mod_path, class_name):
+                module = importlib.import_module(mod_path)
+                importlib.reload(module)
+                return getattr(module, class_name)
+
+            stage_overview = get_stage_class(f"{module_name}.stage_overview", "StageOverview")
+            stage_duplicates = get_stage_class(f"{module_name}.stage_duplicates", "StageDuplicates")
+            stage_missing = get_stage_class(f"{module_name}.stage_missing", "StageMissing")
+            stage_outliers = get_stage_class(f"{module_name}.stage_outliers", "StageOutliers")
+            stage_scaling = get_stage_class(f"{module_name}.stage_scaling", "StageScaling")
+            stage_encoding = get_stage_class(f"{module_name}.stage_encoding", "StageEncoding")
+            stage_apply = get_stage_class(f"{module_name}.stage_apply", "StageApply")
+            
+        except (ImportError, AttributeError) as e:
             messagebox.showerror("Error", f"Failed to load {method} pipeline stages: {str(e)}")
+            import traceback
+            traceback.print_exc()
             return
 
         stage_classes = [

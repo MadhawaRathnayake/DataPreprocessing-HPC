@@ -45,6 +45,24 @@ class StageMissing:
         self._rebuild_col_table()
         self._on_global_change()
 
+    def set_config(self, config):
+        if not config:
+            return
+        if "global_strategy" in config:
+            self._global_strategy.set(config["global_strategy"])
+        if "global_common" in config:
+            self._global_common.set(config["global_common"])
+        if "drop_threshold" in config:
+            self._threshold_var.set(config["drop_threshold"])
+            self._on_threshold_move()
+        if "column_config" in config:
+            self._selected_columns_to_restore = config["column_config"]
+            # Apply immediately if variables exist
+            for col, cfg in config["column_config"].items():
+                if col in self._col_rows:
+                    self._col_rows[col]["strategy"].set(cfg.get("strategy", STRATEGY_DROP))
+                    self._col_rows[col]["fill"].set(cfg.get("fill_val", ""))
+
     def get_config(self):
         col_cfg = {}
         for col, widgets in self._col_rows.items():
@@ -150,6 +168,20 @@ class StageMissing:
         self._no_data_lbl.pack(anchor="w", padx=4, pady=4)
 
     def _rebuild_col_table(self):
+        # Save old selections
+        old_selections = {}
+        for col, widgets in self._col_rows.items():
+            old_selections[col] = {
+                "strategy": widgets["strategy"].get(),
+                "fill": widgets["fill"].get()
+            }
+        
+        # Check for restore list from set_config
+        restore_map = None
+        if hasattr(self, "_selected_columns_to_restore"):
+            restore_map = self._selected_columns_to_restore
+            delattr(self, "_selected_columns_to_restore")
+
         for w in self._col_inner.winfo_children():
             w.destroy()
         self._col_rows.clear()
@@ -165,8 +197,18 @@ class StageMissing:
             row_frame = ttk.Frame(self._col_inner)
             row_frame.pack(fill="x", pady=2)
 
-            strat_var = tk.StringVar(value=STRATEGY_DROP)
-            fill_var  = tk.StringVar(value="")
+            if restore_map is not None and col in restore_map:
+                s_val = restore_map[col].get("strategy", STRATEGY_DROP)
+                f_val = restore_map[col].get("fill_val", "")
+            elif col in old_selections:
+                s_val = old_selections[col]["strategy"]
+                f_val = old_selections[col]["fill"]
+            else:
+                s_val = STRATEGY_DROP
+                f_val = ""
+
+            strat_var = tk.StringVar(value=s_val)
+            fill_var  = tk.StringVar(value=f_val)
 
             ttk.Label(row_frame, text=col, width=22).pack(side="left")
             combo = ttk.Combobox(row_frame, textvariable=strat_var,
