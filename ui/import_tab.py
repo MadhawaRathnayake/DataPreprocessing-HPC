@@ -27,16 +27,16 @@ class ImportTab(BaseTab):
         file_frame.pack(fill='x', padx=10, pady=10)
         
         ttk.Label(file_frame, text="File:").grid(row=0, column=0, sticky='w', pady=5)
-        ttk.Entry(file_frame, textvariable=self.file_path_var, width=60).grid(
-            row=0, column=1, padx=5, pady=5)
+        file_entry = ttk.Entry(file_frame, textvariable=self.file_path_var, width=60)
+        file_entry.grid(row=0, column=1, padx=5, pady=5)
+        file_entry.bind("<Return>", lambda e: self.import_file())
+        
         ttk.Button(file_frame, text="Browse", command=self.browse_file).grid(
             row=0, column=2, padx=5, pady=5)
-        ttk.Button(file_frame, text="Import", command=self.import_file).grid(
-            row=0, column=3, padx=5, pady=5)
 
         # Preview row count selector
         ttk.Label(file_frame, text="Preview Rows:").grid(
-            row=0, column=4, padx=(20, 5), pady=5)
+            row=0, column=3, padx=(20, 5), pady=5)
         preview_combo = ttk.Combobox(
             file_frame,
             textvariable=self.preview_rows_var,
@@ -44,7 +44,7 @@ class ImportTab(BaseTab):
             state="readonly",
             width=6
         )
-        preview_combo.grid(row=0, column=5, padx=5, pady=5)
+        preview_combo.grid(row=0, column=4, padx=5, pady=5)
         preview_combo.bind("<<ComboboxSelected>>", lambda e: self.display_preview())
         
         # Preview frame
@@ -67,13 +67,14 @@ class ImportTab(BaseTab):
         preview_frame.grid_columnconfigure(0, weight=1)
         
     def browse_file(self):
-        """Browse for CSV/Excel file"""
+        """Browse for CSV/Excel file and import automatically"""
         filename = filedialog.askopenfilename(
             title="Select CSV File",
             filetypes=[("CSV files", "*.csv"), ("All files", "*.*")]
         )
         if filename:
             self.file_path_var.set(filename)
+            self.import_file()
             
     def import_file(self):
         """Import CSV file using C library"""
