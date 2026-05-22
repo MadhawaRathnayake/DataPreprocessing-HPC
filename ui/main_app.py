@@ -17,7 +17,6 @@ import theme
 from import_tab import ImportTab
 from unified_pipeline_tab import UnifiedPipelineTab
 from benchmark_tab import BenchmarkComparisonTab
-from export_tab import ExportTab
 
 # Get the project root directory
 PROJECT_ROOT = Path(__file__).parent.parent
@@ -218,13 +217,11 @@ class DataPreprocessingApp:
         self.tabs['pipeline'] = UnifiedPipelineTab(self.notebook, self)
         self.benchmark_tab  = BenchmarkComparisonTab(self.notebook, self)
         self.tabs['benchmark'] = self.benchmark_tab
-        self.tabs['export'] = ExportTab(self.notebook, self)
 
         # Add tabs to notebook
         self.notebook.add(self.tabs['import'].get_frame(),  text="  📂  Import  ")
         self.notebook.add(self.tabs['pipeline'].get_frame(), text="  🔄  Pipeline  ")
         self.notebook.add(self.benchmark_tab.get_frame(),   text="  📊  Benchmark  ")
-        self.notebook.add(self.tabs['export'].get_frame(),  text="  💾  Export  ")
         
     def bind_events(self):
         """Bind application-level events"""
@@ -241,7 +238,7 @@ class DataPreprocessingApp:
             current_tab_index = self.notebook.index(self.notebook.select())
             
             # Get tab names in order (matching the tabs created in create_ui)
-            tab_names = ['import', 'pipeline', 'benchmark', 'export']
+            tab_names = ['import', 'pipeline', 'benchmark']
             
             if current_tab_index < len(tab_names):
                 current_tab_name = tab_names[current_tab_index]

@@ -34,19 +34,21 @@ typedef struct {
 } PreprocessedData;
 
 typedef struct {
-    char *method;          /* "iqr" or "zscore" */
-    char *treatment;       /* "remove", "cap", or "flag" */
+    int method;            /* 0=IQR, 1=Z-score */
+    int treatment;         /* 0=remove, 1=cap, 2=flag */
     char **columns;        /* Columns to apply to */
     int num_columns;
+    double threshold;      /* IQR multiplier or Z-score threshold */
 } OutlierConfig;
 
 typedef struct {
-    char *method;          /* "minmax", "zscore", etc */
+    int method;            /* 0=min-max, 1=z-score, 2=standard */
     char **columns;        /* Columns to scale */
     int num_columns;
 } ScalingConfig;
 
 typedef struct {
+    int method;            /* 0=label, 1=onehot */
     char **columns;        /* Columns to encode */
     int num_columns;
 } EncodingConfig;

@@ -31,6 +31,23 @@ class StageScaling:
     def refresh(self):
         self._rebuild_col_list()
 
+    def set_config(self, config):
+        if not config:
+            return
+        if "method" in config:
+            self._method.set(config["method"])
+        if "columns" in config:
+            # Store selected columns to be applied during next _rebuild_col_list if it hasn't happened yet
+            self._selected_columns_to_restore = config["columns"]
+            # Also apply immediately to current vars if they exist
+            for col in config["columns"]:
+                if col in self._col_vars:
+                    self._col_vars[col].set(True)
+            # Uncheck those not in config
+            for col, var in self._col_vars.items():
+                if col not in config["columns"]:
+                    var.set(False)
+
     def get_config(self):
         return {
             "method":  self._method.get(),
@@ -97,6 +114,15 @@ class StageScaling:
                   ).pack(anchor="w")
 
     def _rebuild_col_list(self):
+        # Save old selections
+        old_selections = {col: var.get() for col, var in self._col_vars.items()}
+        
+        # Check for restore list from set_config
+        restore_list = None
+        if hasattr(self, "_selected_columns_to_restore"):
+            restore_list = self._selected_columns_to_restore
+            delattr(self, "_selected_columns_to_restore")
+
         for w in self._col_inner.winfo_children():
             w.destroy()
         self._col_vars.clear()
@@ -116,7 +142,12 @@ class StageScaling:
             return
 
         for idx, col in enumerate(numeric_cols):
-            var = tk.BooleanVar(value=True)
+            if restore_list is not None:
+                val = (col in restore_list)
+            else:
+                val = old_selections.get(col, True)
+            
+            var = tk.BooleanVar(value=val)
             self._col_vars[col] = var
             r, c = divmod(idx, 3)
             ttk.Checkbutton(self._col_inner, text=col, variable=var

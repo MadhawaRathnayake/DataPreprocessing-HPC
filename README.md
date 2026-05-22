@@ -41,7 +41,6 @@ data_preprocessing_app/
 │   ├── serial_analyzer_tab.py    # Serial analyzer module
 │   ├── openmp_analyzer_tab.py    # OpenMP analyzer module
 │   ├── mpi_analyzer_tab.py       # MPI analyzer module
-│   ├── export_tab.py         # Export tab module
 │   └── UI_ARCHITECTURE.md    # UI architecture documentation
 ├── lib/                       # Compiled shared libraries (generated)
 ├── data/                      # Sample data files
