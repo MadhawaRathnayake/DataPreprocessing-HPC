@@ -5,10 +5,11 @@ Provides Python interfaces to:
 - libserialanalyzer.so (Serial analysis & preprocessing)
 - libompanalyzer.so  (OpenMP parallel analysis)
 - libmpianalyzer.so  (MPI parallel analysis)
+- libpreprocessor_cuda.so (CUDA preprocessing)
 """
 
 import ctypes
-from ctypes import c_char_p, c_int, c_double, POINTER, Structure
+from ctypes import c_char_p, c_int, c_double, c_void_p, POINTER, Structure
 from pathlib import Path
 import json
 
@@ -152,6 +153,24 @@ PreprocessedData._fields_ = [
 ]
 
 
+class PreprocessedDataCuda(Structure):
+    """Result structure from CUDA preprocessing backend"""
+    pass
+
+PreprocessedDataCuda._fields_ = [
+    ("data", POINTER(c_char_p)),
+    ("num_rows", c_int),
+    ("num_cols", c_int),
+    ("headers", POINTER(c_char_p)),
+    ("duplicates_found", c_int),
+    ("missing_filled", c_int),
+    ("outliers_removed", c_int),
+    ("columns_scaled", c_int),
+    ("columns_encoded", c_int),
+    ("processing_time_ms", c_double),
+]
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Library Loader
 # ─────────────────────────────────────────────────────────────────────────────
@@ -288,6 +307,23 @@ class CAnalyzerLib:
         self.lib.preprocess_to_json.argtypes = [POINTER(PreprocessedData)]
         self.lib.preprocess_to_json.restype = c_char_p
 
+    def _setup_cuda_preprocessor(self):
+        """Configure function signatures for CUDA preprocessor"""
+        if not self.lib:
+            return
+
+        self.lib.preprocess_cuda.argtypes = [
+            POINTER(c_char_p), POINTER(c_char_p), c_int, c_int, c_int,
+            POINTER(OutlierConfig), POINTER(ScalingConfig), POINTER(EncodingConfig)
+        ]
+        self.lib.preprocess_cuda.restype = POINTER(PreprocessedDataCuda)
+
+        self.lib.free_preprocessed_data.argtypes = [c_void_p]
+        self.lib.free_preprocessed_data.restype = None
+
+        self.lib.preprocess_to_json.argtypes = [c_void_p]
+        self.lib.preprocess_to_json.restype = c_char_p
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Library Factories
@@ -315,15 +351,19 @@ def load_mpi_analyzer(lib_dir):
 
 
 def load_preprocessor(lib_dir, variant="serial"):
-    """Load preprocessor library (serial, openmp, or mpi)"""
+    """Load preprocessor library (serial, openmp, mpi, or cuda)"""
     lib_map = {
         "serial": "libpreprocessor.so",
         "openmp": "libpreprocessor_omp.so",
         "mpi": "libpreprocessor_mpi.so",
+        "cuda": "libpreprocessor_cuda.so",
     }
     lib_name = lib_map.get(variant, "libpreprocessor.so")
     lib = CAnalyzerLib(Path(lib_dir) / lib_name)
-    lib._setup_preprocessor()
+    if variant == "cuda":
+        lib._setup_cuda_preprocessor()
+    else:
+        lib._setup_preprocessor()
     return lib
 
 
@@ -340,6 +380,11 @@ def load_openmp_preprocessor(lib_dir):
 def load_mpi_preprocessor(lib_dir):
     """Load MPI preprocessor library"""
     return load_preprocessor(lib_dir, "mpi")
+
+
+def load_cuda_preprocessor(lib_dir):
+    """Load CUDA preprocessor library"""
+    return load_preprocessor(lib_dir, "cuda")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -450,11 +495,11 @@ def c_preprocessed_data_to_python(c_result):
             'columns_scaled': result.columns_scaled,
             'columns_encoded': result.columns_encoded,
             'processing_time_ms': result.processing_time_ms,
-            'duplicates_time_ms': result.duplicates_time_ms,
-            'missing_time_ms': result.missing_time_ms,
-            'outliers_time_ms': result.outliers_time_ms,
-            'scaling_time_ms': result.scaling_time_ms,
-            'encoding_time_ms': result.encoding_time_ms,
+            'duplicates_time_ms': getattr(result, 'duplicates_time_ms', 0.0),
+            'missing_time_ms': getattr(result, 'missing_time_ms', 0.0),
+            'outliers_time_ms': getattr(result, 'outliers_time_ms', 0.0),
+            'scaling_time_ms': getattr(result, 'scaling_time_ms', 0.0),
+            'encoding_time_ms': getattr(result, 'encoding_time_ms', 0.0),
         }
     }
 
