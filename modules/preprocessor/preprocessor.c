@@ -161,6 +161,47 @@ static char** remove_duplicates(char **data, int *num_rows, int num_cols, int *d
     return unique;
 }
 
+/* Helper: Replace a specific column value in a CSV row string */
+static void replace_column_value(char *row, int col, int num_cols, const char *new_val) {
+    char temp[8192];
+    if (strlen(row) >= 8000) return;
+    strcpy(temp, row);
+    
+    char new_row[8192];
+    new_row[0] = '\0';
+    
+    char *curr = temp;
+    for (int c = 0; c < num_cols; c++) {
+        char *val = "";
+        char *next = NULL;
+        
+        if (curr) {
+            next = strchr(curr, ',');
+            if (next) {
+                *next = '\0';
+            }
+            val = curr;
+        }
+        
+        if (c == col) {
+            strcat(new_row, new_val);
+        } else {
+            strcat(new_row, val);
+        }
+        
+        if (c < num_cols - 1) {
+            strcat(new_row, ",");
+        }
+        
+        if (next) {
+            curr = next + 1;
+        } else {
+            curr = NULL;
+        }
+    }
+    strcpy(row, new_row);
+}
+
 /* Stage 2: Impute missing values with mean/mode */
 static void impute_missing_values(char **data, int num_rows, char **headers, 
                                    int num_cols, int *missing_count) {
@@ -179,7 +220,9 @@ static void impute_missing_values(char **data, int num_rows, char **headers,
             strcpy(temp, data[row]);  /* IMPORTANT: Make a copy before strtok() */
             
             char *val = strtok(temp, ",");
-            for (int c = 0; c < col; c++) val = strtok(NULL, ",");
+            for (int c = 0; c < col; c++) {
+                if (val) val = strtok(NULL, ",");
+            }
             
             if (is_missing(val)) {
                 has_missing = 1;
@@ -196,41 +239,19 @@ static void impute_missing_values(char **data, int num_rows, char **headers,
         /* Impute missing values */
         for (int row = 0; row < num_rows; row++) {
             if (!data[row]) continue;
-            char temp[4096];  /* Safe fixed size */
-            if (strlen(data[row]) >= 4000) continue;  /* Skip oversized rows */
+            char temp[4096];
+            if (strlen(data[row]) >= 4000) continue;
             strcpy(temp, data[row]);
             
             char *val = strtok(temp, ",");
-            for (int c = 0; c < col; c++) val = strtok(NULL, ",");
+            for (int c = 0; c < col; c++) {
+                if (val) val = strtok(NULL, ",");
+            }
             
             if (is_missing(val)) {
-                /* Replace with mean (simplified approach) */
                 char replacement[50];
                 snprintf(replacement, sizeof(replacement), "%.2f", mean);
-                
-                /* Reconstruct row with replacement */
-                char new_row[4096];
-                new_row[0] = '\0';
-                strcpy(temp, data[row]);
-                val = strtok(temp, ",");
-                
-                for (int c = 0; c < col; c++) {
-                    if (strlen(new_row) + strlen(val) + 2 < 4090) {
-                        strcat(new_row, val);
-                        strcat(new_row, ",");
-                    }
-                    val = strtok(NULL, ",");
-                }
-                if (strlen(new_row) + strlen(replacement) + 1 < 4090) {
-                    strcat(new_row, replacement);
-                    val = strtok(NULL, ",");
-                    if (val && strlen(new_row) + strlen(val) + 2 < 4090) {
-                        strcat(new_row, ",");
-                        strcat(new_row, val);
-                    }
-                }
-                
-                if (strlen(new_row) < 4000) strcpy(data[row], new_row);
+                replace_column_value(data[row], col, num_cols, replacement);
                 (*missing_count)++;
             }
         }
@@ -353,12 +374,14 @@ static void scale_columns(char **data, int num_rows, char **headers,
         double min_val = 1e10, max_val = -1e10;
         for (int row = 0; row < num_rows; row++) {
             if (!data[row]) continue;
-            char temp[4096];  /* Safe fixed size instead of VLA */
+            char temp[4096];
             if (strlen(data[row]) >= 4000) continue;
             strcpy(temp, data[row]);
             char *val = strtok(temp, ",");
             
-            for (int c = 0; c < col; c++) val = strtok(NULL, ",");
+            for (int c = 0; c < col; c++) {
+                if (val) val = strtok(NULL, ",");
+            }
             
             if (is_numeric(val)) {
                 double v = atof(val);
@@ -373,43 +396,22 @@ static void scale_columns(char **data, int num_rows, char **headers,
         double range = max_val - min_val;
         for (int row = 0; row < num_rows; row++) {
             if (!data[row]) continue;
-            char temp[4096];  /* Safe fixed size */
+            char temp[4096];
             if (strlen(data[row]) >= 4000) continue;
             strcpy(temp, data[row]);
             char *val = strtok(temp, ",");
             
-            for (int c = 0; c < col - 1; c++) {
-                val = strtok(NULL, ",");
+            for (int c = 0; c < col; c++) {
+                if (val) val = strtok(NULL, ",");
             }
             
             if (is_numeric(val)) {
                 double v = atof(val);
                 double normalized = (v - min_val) / range;
                 
-                /* Reconstruct row with scaled value */
-                char new_row[4096];  /* Larger buffer for safety */
-                new_row[0] = '\0';
-                if (strlen(data[row]) >= 4000) continue;  /* Skip if row too large */
-                strcpy(temp, data[row]);
-                val = strtok(temp, ",");
-                
-                for (int c = 0; c < col; c++) {
-                    strcat(new_row, val);
-                    strcat(new_row, ",");
-                    val = strtok(NULL, ",");
-                }
-                
                 char scaled[50];
                 snprintf(scaled, sizeof(scaled), "%.4f", normalized);
-                strcat(new_row, scaled);
-                
-                val = strtok(NULL, ",");
-                if (val) {
-                    strcat(new_row, ",");
-                    strcat(new_row, val);
-                }
-                
-                strcpy(data[row], new_row);
+                replace_column_value(data[row], col, num_cols, scaled);
             }
         }
         
@@ -437,12 +439,16 @@ static void encode_columns(char **data, int num_rows, char **headers,
         
         for (int row = 0; row < num_rows; row++) {
             if (!data[row]) continue;
-            char temp[4096];  /* Safe fixed size */
-            if (strlen(data[row]) >= 4000) continue;  /* Skip oversized rows */
+            char temp[4096];
+            if (strlen(data[row]) >= 4000) continue;
             strcpy(temp, data[row]);
             char *val = strtok(temp, ",");
             
-            for (int c = 0; c < col; c++) val = strtok(NULL, ",");
+            for (int c = 0; c < col; c++) {
+                if (val) val = strtok(NULL, ",");
+            }
+            
+            if (!val) val = "";
             
             /* Find or create encoding for this value */
             int found = -1;
@@ -465,30 +471,11 @@ static void encode_columns(char **data, int num_rows, char **headers,
         
         /* Replace values with numeric encodings */
         for (int row = 0; row < num_rows; row++) {
-            if (!data[row] || strlen(data[row]) >= 4000) continue;  /* Skip invalid rows */
-            char temp[4096];  /* Larger buffer for safety */
-            strcpy(temp, data[row]);
-            char *val = strtok(temp, ",");
-            
-            char new_row[4096];  /* Larger buffer for safety */
-            new_row[0] = '\0';
-            for (int c = 0; c < col; c++) {
-                strcat(new_row, val);
-                strcat(new_row, ",");
-                val = strtok(NULL, ",");
-            }
+            if (!data[row] || strlen(data[row]) >= 4000) continue;
             
             char encoded[50];
             snprintf(encoded, sizeof(encoded), "%d", encoding[row]);
-            strcat(new_row, encoded);
-            
-            val = strtok(NULL, ",");
-            if (val) {
-                strcat(new_row, ",");
-                strcat(new_row, val);
-            }
-            
-            strcpy(data[row], new_row);
+            replace_column_value(data[row], col, num_cols, encoded);
         }
         
         /* Free temporary storage */
