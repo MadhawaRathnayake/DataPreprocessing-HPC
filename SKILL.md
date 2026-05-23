@@ -52,10 +52,10 @@ data_preprocessing_app/
 │   │   ├── mpi_analyzer.h
 │   │   ├── mpi_analyzer.c          ← Uses mpi.h (simplified, single-process)
 │   │   └── Makefile                ← mpicc → lib/libmpianalyzer.so
-│   └── analyzer_cuda/              ← [PLANNED — not yet implemented]
-│       ├── cuda_analyzer.h
-│       ├── cuda_analyzer.cu        ← CUDA kernels
-│       └── Makefile                ← nvcc → lib/libcudaanalyzer.so
+│   └── analyzer_cuda/              ← CUDA preprocessing backend
+│       ├── cuda_preprocessor.h
+│       ├── cuda_preprocessor.cu    ← CUDA preprocessing kernels
+│       └── Makefile                ← nvcc → lib/libpreprocessor_cuda.so
 │
 ├── lib/                            ← Compiled shared libraries (.so)
 │   ├── libcsvimporter.so
@@ -71,7 +71,7 @@ data_preprocessing_app/
 │   ├── series_processing_tab.py    ← "Series Processing" tab (7-stage pipeline)
 │   ├── openmp_pipeline_tab.py      ← "OpenMP Parallel" tab (7-stage pipeline)
 │   ├── mpi_pipeline_tab.py         ← "MPI Parallel" tab (7-stage pipeline)
-│   ├── cuda_pipeline_tab.py        ← "CUDA Parallel" tab (UI only — backend planned)
+│   ├── cuda_pipeline_tab.py        ← "CUDA Parallel" tab
 │   ├── __init__.py
 │   └── pipeline_stages/            ← Pipeline stage UI components
 │       ├── series/                 ← Serial stage classes (UI + Python placeholder logic)
@@ -89,7 +89,7 @@ data_preprocessing_app/
 │       ├── mpi/                    ← MPI stage classes (TODO: call libmpianalyzer.so)
 │       │   ├── __init__.py
 │       │   └── stage_*.py          ← Same UI; stage_apply has MPI ctypes TODO stub
-│       └── cuda/                   ← CUDA stage classes (backend NOT YET IMPLEMENTED)
+│       └── cuda/                   ← CUDA stage classes
 │           ├── __init__.py
 │           └── stage_*.py          ← Same UI; stage_apply shows "not implemented" dialog
 │
@@ -115,7 +115,7 @@ Compiles all C modules in order:
 2. `modules/series_processing/` → `lib/libserialanalyzer.so`  *(was `analyzer_serial/`)*
 3. `modules/analyzer_openmp/` → `lib/libompanalyzer.so`
 4. `modules/analyzer_mpi/` → `lib/libmpianalyzer.so` (skipped if `mpicc` absent)
-5. `modules/analyzer_cuda/` → `lib/libcudaanalyzer.so` (planned — not yet present)
+5. `modules/analyzer_cuda/` → `lib/libpreprocessor_cuda.so` (skipped if `nvcc` absent)
 
 **GCC Flags used**: `-Wall -O2 -fPIC -fopenmp -lm`
 - `-fPIC` is required for shared libraries
@@ -384,9 +384,8 @@ Left rail label shows `[MPI]`. `stage_apply.py` banner shows MPI backend info + 
 ### 5.7 CUDAPipelineTab — `ui/cuda_pipeline_tab.py`
 
 **UI**: Identical 7-stage pipeline layout.  
-Left rail label shows `[CUDA]`. `stage_apply.py` banner shows CUDA backend planned status.  
-**Backend**: NOT YET IMPLEMENTED — clicking "Run CUDA Pipeline" shows an informational  
-dialog with planned implementation details (modules/analyzer_cuda/, nvcc compile flags).  
+Left rail label shows `[CUDA]`. `stage_apply.py` runs the CUDA preprocessing backend through
+`lib/libpreprocessor_cuda.so` when the CUDA library has been built.
 
 ---
 
@@ -558,8 +557,8 @@ sudo apt-get install build-essential python3 python3-tk libopenmpi-dev
    computation in Python as a placeholder. Each file contains a clearly marked `# TODO:`
    block showing exactly where the C ctypes call goes. See the `stage_apply.py` in
    `pipeline_stages/series/`, `pipeline_stages/openmp/`, and `pipeline_stages/mpi/`.
-3. **CUDA backend not implemented**: `pipeline_stages/cuda/stage_apply.py` shows a
-   "not implemented" dialog. Requires `modules/analyzer_cuda/`, nvcc, and CUDA toolkit.
+3. **CUDA backend unavailable**: requires `modules/analyzer_cuda/`, nvcc, CUDA toolkit,
+   and a built `lib/libpreprocessor_cuda.so`.
 4. **Memory**: Entire CSV loaded into RAM — no streaming support.
 5. CSV only: No Excel/JSON import yet.
 6. Display limit: Preview shows first 15 rows only (C `csv_get_preview` takes `num_rows` param).
