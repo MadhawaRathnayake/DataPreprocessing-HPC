@@ -7,7 +7,7 @@ TARGET = $(LIB_DIR)/libpreprocessor_cuda.so
 STANDALONE_TARGET = cuda_preprocessor_hybrid_standalone
 NORMAL_STANDALONE_TARGET = cuda_preprocessor_normal_standalone
 ORIGINAL_SOURCES = cuda_preprocessor.cu
-SOURCES = cuda_preprocessor.cu
+SOURCES = cuda_preprocessor_hybrid_standalone.cu
 STANDALONE_SOURCES = cuda_preprocessor_hybrid_standalone.cu
 NORMAL_STANDALONE_SOURCES = cuda_preprocessor_normal_standalone.cpp
 HEADERS = cuda_preprocessor.h
@@ -16,8 +16,8 @@ all: $(TARGET)
 
 $(TARGET): $(SOURCES) $(HEADERS)
 	mkdir -p $(LIB_DIR)
-	$(NVCC) $(NVCCFLAGS) -Xcompiler -fopenmp $(LDFLAGS) -o $@ $(SOURCES)
-	@echo "Built merged CUDA preprocessor for app: $@"
+	$(NVCC) $(NVCCFLAGS) -Xcompiler -fopenmp -DCUDA_HYBRID_LIBRARY $(LDFLAGS) -o $@ $(SOURCES)
+	@echo "Built hybrid CUDA preprocessor for app: $@"
 
 standalone: $(STANDALONE_TARGET)
 

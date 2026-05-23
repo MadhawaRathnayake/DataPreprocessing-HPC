@@ -28,14 +28,7 @@ class PreprocessingPipeline:
     All transformations are performed in compiled C, bypassing Python GIL.
     """
     
-    def __init__(
-        self,
-        backend_lib=None,
-        backend_type="serial",
-        num_threads=1,
-        num_processes=1,
-        cuda_routing=None,
-    ):
+    def __init__(self, backend_lib=None, backend_type="serial", num_threads=1, num_processes=1):
         """
         Parameters:
         -----------
@@ -51,7 +44,6 @@ class PreprocessingPipeline:
         self.backend_type = backend_type
         self.num_threads = num_threads
         self.num_processes = num_processes
-        self.cuda_routing = cuda_routing or {}
         self.metrics = MetricsCollector(backend_type)
         self.metrics.set_system_config(
             num_threads=num_threads if backend_type == "openmp" else None,
@@ -156,7 +148,6 @@ class PreprocessingPipeline:
                 )
 
             elif self.backend_type == "cuda":
-                self._configure_cuda_routing()
                 c_result = self.lib.lib.preprocess_cuda(
                     c_data_ptr, c_headers_ptr, num_rows, num_cols, remove_duplicates,
                     byref(outlier_cfg) if outlier_cfg else None,
@@ -200,8 +191,6 @@ class PreprocessingPipeline:
                 'metrics': self.metrics.get_metrics(),
                 'c_processing_time_ms': metrics['processing_time_ms']
             }
-            if self.backend_type == "cuda":
-                stats.update(self._read_cuda_diagnostics())
             
             self.logger.info(f"Pipeline COMPLETE: {result_dict['num_rows']} rows × {result_dict['num_cols']} columns")
             self.logger.info(f"C preprocessing time: {metrics['processing_time_ms']:.2f}ms")
@@ -213,42 +202,6 @@ class PreprocessingPipeline:
         except Exception as e:
             self.logger.error(f"C preprocessing failed: {e}")
             return data, headers, {'error': str(e)}
-
-    def _configure_cuda_routing(self):
-        configure = getattr(self.lib.lib, "cuda_preprocessor_configure_routing", None)
-        if not configure:
-            return
-        mode_map = {"auto": 0, "cpu": 1, "normal": 2, "hybrid": 3}
-        mode = str(self.cuda_routing.get("mode", "auto")).lower()
-        configure(
-            mode_map.get(mode, 0),
-            int(self.cuda_routing.get("cpu_threshold", 250000) or 250000),
-            int(self.cuda_routing.get("hybrid_threshold", 700000) or 700000),
-            int(self.cuda_routing.get("cpu_threads", min(os.cpu_count() or 4, 8)) or 8),
-        )
-
-    def _read_cuda_diagnostics(self):
-        diagnostics = {}
-        try:
-            get_backend = getattr(self.lib.lib, "cuda_preprocessor_get_last_backend", None)
-            if get_backend:
-                raw = get_backend()
-                diagnostics["cuda_backend_used"] = raw.decode("utf-8") if raw else ""
-        except Exception:
-            pass
-        try:
-            get_work = getattr(self.lib.lib, "cuda_preprocessor_get_last_numeric_work", None)
-            if get_work:
-                diagnostics["cuda_numeric_work"] = int(get_work())
-        except Exception:
-            pass
-        try:
-            get_cuda_ms = getattr(self.lib.lib, "cuda_preprocessor_get_last_cuda_work_time_ms", None)
-            if get_cuda_ms:
-                diagnostics["cuda_work_time_ms"] = float(get_cuda_ms())
-        except Exception:
-            pass
-        return diagnostics
     
     def _prepare_c_data(self, data: List[List[str]], headers: List[str]) -> Tuple:
         """Convert Python data to ctypes format (CSV-formatted strings)

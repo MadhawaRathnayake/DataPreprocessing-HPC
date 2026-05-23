@@ -49,16 +49,6 @@ PreprocessedData* preprocess_cuda(
     EncodingConfig *encoding_cfg
 );
 
-void cuda_preprocessor_configure_routing(
-    int mode,
-    long long cpu_threshold,
-    long long hybrid_threshold,
-    int cpu_threads
-);
-const char* cuda_preprocessor_get_last_backend();
-long long cuda_preprocessor_get_last_numeric_work();
-double cuda_preprocessor_get_last_cuda_work_time_ms();
-
 void free_preprocessed_data(PreprocessedData *data);
 char* preprocess_to_json(PreprocessedData *data);
 

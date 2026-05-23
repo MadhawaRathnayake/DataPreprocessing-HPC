@@ -324,32 +324,6 @@ class CAnalyzerLib:
         self.lib.preprocess_to_json.argtypes = [c_void_p]
         self.lib.preprocess_to_json.restype = c_char_p
 
-        try:
-            self.lib.cuda_preprocessor_configure_routing.argtypes = [
-                c_int, ctypes.c_longlong, ctypes.c_longlong, c_int
-            ]
-            self.lib.cuda_preprocessor_configure_routing.restype = None
-        except AttributeError:
-            pass
-
-        try:
-            self.lib.cuda_preprocessor_get_last_backend.argtypes = []
-            self.lib.cuda_preprocessor_get_last_backend.restype = c_char_p
-        except AttributeError:
-            pass
-
-        try:
-            self.lib.cuda_preprocessor_get_last_numeric_work.argtypes = []
-            self.lib.cuda_preprocessor_get_last_numeric_work.restype = ctypes.c_longlong
-        except AttributeError:
-            pass
-
-        try:
-            self.lib.cuda_preprocessor_get_last_cuda_work_time_ms.argtypes = []
-            self.lib.cuda_preprocessor_get_last_cuda_work_time_ms.restype = c_double
-        except AttributeError:
-            pass
-
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Library Factories
