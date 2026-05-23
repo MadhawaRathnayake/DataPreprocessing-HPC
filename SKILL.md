@@ -53,7 +53,7 @@ data_preprocessing_app/
 │   │   ├── mpi_analyzer.c          ← Uses mpi.h (simplified, single-process)
 │   │   └── Makefile                ← mpicc → lib/libmpianalyzer.so
 │   └── analyzer_cuda/              ← CUDA preprocessing backend
-│       ├── cuda_preprocessor.cu    ← CUDA preprocessing kernels
+│       ├── cuda_preprocessor.cu    ← Hybrid CUDA preprocessing backend
 │       └── Makefile                ← nvcc → lib/libpreprocessor_cuda.so
 │
 ├── lib/                            ← Compiled shared libraries (.so)

@@ -2,6 +2,12 @@
 
 #include "cuda_preprocessor.h"
 
+/*
+ * Hybrid CUDA + CPU-threaded preprocessing backend.
+ * Defining CUDA_HYBRID_LIBRARY builds the app-facing shared library without
+ * the standalone CLI entrypoint.
+ */
+
 #include <algorithm>
 #include <cfloat>
 #include <cmath>
@@ -10,6 +16,8 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <fstream>
+#include <iostream>
 #include <sstream>
 #include <string>
 #include <unordered_map>
@@ -21,42 +29,6 @@
 #endif
 
 #define THREADS_PER_BLOCK 256
-#define ROUTE_AUTO 0
-#define ROUTE_CPU 1
-#define ROUTE_NORMAL_CUDA 2
-#define ROUTE_HYBRID_CUDA 3
-
-static double g_last_cuda_work_time_ms = 0.0;
-static long long g_last_numeric_work = 0;
-static const char *g_last_backend = "unknown";
-static int g_route_mode = ROUTE_AUTO;
-static long long g_cpu_threshold = 250000;
-static long long g_hybrid_threshold = 700000;
-static int g_cpu_threads = 8;
-
-extern "C" void cuda_preprocessor_configure_routing(
-    int mode,
-    long long cpu_threshold,
-    long long hybrid_threshold,
-    int cpu_threads
-) {
-    g_route_mode = (mode >= ROUTE_AUTO && mode <= ROUTE_HYBRID_CUDA) ? mode : ROUTE_AUTO;
-    g_cpu_threshold = cpu_threshold > 0 ? cpu_threshold : 250000;
-    g_hybrid_threshold = hybrid_threshold > 0 ? hybrid_threshold : 700000;
-    g_cpu_threads = cpu_threads > 0 ? cpu_threads : 8;
-}
-
-extern "C" const char* cuda_preprocessor_get_last_backend() {
-    return g_last_backend;
-}
-
-extern "C" long long cuda_preprocessor_get_last_numeric_work() {
-    return g_last_numeric_work;
-}
-
-extern "C" double cuda_preprocessor_get_last_cuda_work_time_ms() {
-    return g_last_cuda_work_time_ms;
-}
 
 struct NumericStats {
     double min_value = 0.0;
@@ -66,12 +38,7 @@ struct NumericStats {
     int valid_count = 0;
 };
 
-static void check_cuda(cudaError_t status, const char *what) {
-    if (status != cudaSuccess) {
-        fprintf(stderr, "CUDA error during %s: %s\n", what, cudaGetErrorString(status));
-        exit(1);
-    }
-}
+static double g_last_cuda_work_time_ms = 0.0;
 
 static void set_cpu_threads(int num_threads) {
 #ifdef _OPENMP
@@ -79,6 +46,21 @@ static void set_cpu_threads(int num_threads) {
 #else
     (void)num_threads;
 #endif
+}
+
+static int get_cpu_threads() {
+#ifdef _OPENMP
+    return omp_get_max_threads();
+#else
+    return 1;
+#endif
+}
+
+static void check_cuda(cudaError_t status, const char *what) {
+    if (status != cudaSuccess) {
+        fprintf(stderr, "CUDA error during %s: %s\n", what, cudaGetErrorString(status));
+        exit(1);
+    }
 }
 
 static char *dup_cstr(const std::string &s) {
@@ -164,37 +146,6 @@ static bool is_numeric_column(const std::vector<std::vector<std::string>> &rows,
     return numeric_seen > 0 && text_seen == 0;
 }
 
-static std::vector<int> find_numeric_columns(
-    const std::vector<std::vector<std::string>> &rows,
-    const std::vector<std::string> &headers,
-    ScalingConfig *cfg,
-    bool parallel
-) {
-    std::vector<int> numeric_cols;
-    if (!cfg || rows.empty()) return numeric_cols;
-
-    if (parallel) {
-        std::vector<int> numeric_flags(headers.size(), 0);
-        #pragma omp parallel for schedule(dynamic)
-        for (int c = 0; c < (int)headers.size(); c++) {
-            if (config_selects_column(c, headers, cfg->columns, cfg->num_columns) && is_numeric_column(rows, c)) {
-                numeric_flags[c] = 1;
-            }
-        }
-        for (int c = 0; c < (int)headers.size(); c++) {
-            if (numeric_flags[c]) numeric_cols.push_back(c);
-        }
-    } else {
-        for (int c = 0; c < (int)headers.size(); c++) {
-            if (config_selects_column(c, headers, cfg->columns, cfg->num_columns) && is_numeric_column(rows, c)) {
-                numeric_cols.push_back(c);
-            }
-        }
-    }
-
-    return numeric_cols;
-}
-
 static std::vector<double> collect_numeric_values(const std::vector<std::vector<std::string>> &rows, int col) {
     std::vector<double> values;
     values.reserve(rows.size());
@@ -234,55 +185,14 @@ static int remove_duplicates_exact(std::vector<std::vector<std::string>> &rows) 
     return duplicates;
 }
 
-static int fill_missing_values(std::vector<std::vector<std::string>> &rows, int num_cols, bool parallel) {
+static int fill_missing_values(std::vector<std::vector<std::string>> &rows, int num_cols) {
     int filled = 0;
-    if (parallel) {
-        for (auto &row : rows) {
-            if ((int)row.size() < num_cols) row.resize(num_cols);
-        }
 
-        #pragma omp parallel for reduction(+:filled) schedule(dynamic)
-        for (int col = 0; col < num_cols; col++) {
-            bool numeric = is_numeric_column(rows, col);
-            std::string replacement = "";
-
-            if (numeric) {
-                double sum = 0.0;
-                int count = 0;
-                for (const auto &row : rows) {
-                    double v = 0.0;
-                    if (col < (int)row.size() && parse_double(row[col], v)) {
-                        sum += v;
-                        count++;
-                    }
-                }
-                replacement = count > 0 ? format_double(sum / count) : "0";
-            } else {
-                std::unordered_map<std::string, int> counts;
-                for (const auto &row : rows) {
-                    if (col < (int)row.size() && !is_missing(row[col])) counts[row[col]]++;
-                }
-                int best_count = -1;
-                for (const auto &kv : counts) {
-                    if (kv.second > best_count) {
-                        replacement = kv.first;
-                        best_count = kv.second;
-                    }
-                }
-                if (replacement.empty()) replacement = "UNKNOWN";
-            }
-
-            for (int r = 0; r < (int)rows.size(); r++) {
-                auto &row = rows[r];
-                if (is_missing(row[col])) {
-                    row[col] = replacement;
-                    filled++;
-                }
-            }
-        }
-        return filled;
+    for (auto &row : rows) {
+        if ((int)row.size() < num_cols) row.resize(num_cols);
     }
 
+    #pragma omp parallel for reduction(+:filled) schedule(dynamic)
     for (int col = 0; col < num_cols; col++) {
         bool numeric = is_numeric_column(rows, col);
         std::string replacement = "";
@@ -313,8 +223,8 @@ static int fill_missing_values(std::vector<std::vector<std::string>> &rows, int 
             if (replacement.empty()) replacement = "UNKNOWN";
         }
 
-        for (auto &row : rows) {
-            if (col >= (int)row.size()) row.resize(num_cols);
+        for (int r = 0; r < (int)rows.size(); r++) {
+            auto &row = rows[r];
             if (is_missing(row[col])) {
                 row[col] = replacement;
                 filled++;
@@ -625,125 +535,57 @@ __global__ void scale_kernel(
     }
 }
 
-static int apply_cpu_scaling(
-    std::vector<std::vector<std::string>> &rows,
-    const std::vector<int> &numeric_cols,
-    ScalingConfig *cfg,
-    bool parallel
-) {
-    g_last_cuda_work_time_ms = 0.0;
-    if (!cfg || rows.empty() || numeric_cols.empty()) return 0;
-
-    int rows_count = (int)rows.size();
-    int scaled = 0;
-
-    if (parallel) {
-        #pragma omp parallel for reduction(+:scaled) schedule(dynamic)
-        for (int gc = 0; gc < (int)numeric_cols.size(); gc++) {
-            int col = numeric_cols[gc];
-            std::vector<double> values = collect_numeric_values(rows, col);
-            if (values.size() < 4) continue;
-
-            double center = 0.0;
-            double scale = 0.0;
-            if (cfg->method == 1) {
-                double sum = 0.0;
-                for (double v : values) sum += v;
-                center = sum / values.size();
-                double var = 0.0;
-                for (double v : values) var += (v - center) * (v - center);
-                scale = sqrt(var / values.size());
-            } else if (cfg->method == 2) {
-                std::sort(values.begin(), values.end());
-                center = percentile_sorted(values, 0.5);
-                double q1 = percentile_sorted(values, 0.25);
-                double q3 = percentile_sorted(values, 0.75);
-                scale = q3 - q1;
-            } else {
-                auto minmax = std::minmax_element(values.begin(), values.end());
-                center = *minmax.first;
-                scale = *minmax.second - *minmax.first;
-            }
-            if (scale == 0.0) continue;
-
-            for (auto &row : rows) {
-                double v = 0.0;
-                if (parse_double(row[col], v)) row[col] = format_double((v - center) / scale);
-            }
-            scaled++;
-        }
-        return scaled;
-    }
-
-    for (int col : numeric_cols) {
-        std::vector<double> values = collect_numeric_values(rows, col);
-        if (values.size() < 4) continue;
-
-        double center = 0.0;
-        double scale = 0.0;
-        if (cfg->method == 1) {
-            double sum = 0.0;
-            for (double v : values) sum += v;
-            center = sum / values.size();
-            double var = 0.0;
-            for (double v : values) var += (v - center) * (v - center);
-            scale = sqrt(var / values.size());
-        } else if (cfg->method == 2) {
-            std::sort(values.begin(), values.end());
-            center = percentile_sorted(values, 0.5);
-            double q1 = percentile_sorted(values, 0.25);
-            double q3 = percentile_sorted(values, 0.75);
-            scale = q3 - q1;
-        } else {
-            auto minmax = std::minmax_element(values.begin(), values.end());
-            center = *minmax.first;
-            scale = *minmax.second - *minmax.first;
-        }
-        if (scale == 0.0) continue;
-
-        for (auto &row : rows) {
-            double v = 0.0;
-            if (parse_double(row[col], v)) row[col] = format_double((v - center) / scale);
-        }
-        scaled++;
-    }
-
-    return scaled;
-}
-
 static int apply_gpu_scaling(
     std::vector<std::vector<std::string>> &rows,
-    const std::vector<int> &numeric_cols,
-    ScalingConfig *cfg,
-    bool parallel
+    const std::vector<std::string> &headers,
+    ScalingConfig *cfg
 ) {
     g_last_cuda_work_time_ms = 0.0;
-    if (!cfg || rows.empty() || numeric_cols.empty()) return 0;
+    if (!cfg || rows.empty()) return 0;
+
+    std::vector<int> numeric_cols;
+    std::vector<int> numeric_flags(headers.size(), 0);
+    #pragma omp parallel for schedule(dynamic)
+    for (int c = 0; c < (int)headers.size(); c++) {
+        if (config_selects_column(c, headers, cfg->columns, cfg->num_columns) && is_numeric_column(rows, c)) {
+            numeric_flags[c] = 1;
+        }
+    }
+    for (int c = 0; c < (int)headers.size(); c++) {
+        if (numeric_flags[c]) numeric_cols.push_back(c);
+    }
+    if (numeric_cols.empty()) return 0;
 
     int rows_count = (int)rows.size();
     int gpu_cols = (int)numeric_cols.size();
 
     if (cfg->method == 2) {
-        return apply_cpu_scaling(rows, numeric_cols, cfg, parallel);
-    }
-
-    std::vector<double> matrix((size_t)rows_count * gpu_cols, NAN);
-    if (parallel) {
         #pragma omp parallel for schedule(dynamic)
         for (int gc = 0; gc < gpu_cols; gc++) {
             int col = numeric_cols[gc];
-            for (int r = 0; r < rows_count; r++) {
+            std::vector<double> values = collect_numeric_values(rows, col);
+            if (values.size() < 4) continue;
+            std::sort(values.begin(), values.end());
+            double median = percentile_sorted(values, 0.5);
+            double q1 = percentile_sorted(values, 0.25);
+            double q3 = percentile_sorted(values, 0.75);
+            double iqr = q3 - q1;
+            if (iqr == 0.0) continue;
+            for (auto &row : rows) {
                 double v = 0.0;
-                if (parse_double(rows[r][col], v)) matrix[(size_t)gc * rows_count + r] = v;
+                if (parse_double(row[col], v)) row[col] = format_double((v - median) / iqr);
             }
         }
-    } else {
-        for (int gc = 0; gc < gpu_cols; gc++) {
-            int col = numeric_cols[gc];
-            for (int r = 0; r < rows_count; r++) {
-                double v = 0.0;
-                if (parse_double(rows[r][col], v)) matrix[(size_t)gc * rows_count + r] = v;
-            }
+        return gpu_cols;
+    }
+
+    std::vector<double> matrix((size_t)rows_count * gpu_cols, NAN);
+    #pragma omp parallel for schedule(dynamic)
+    for (int gc = 0; gc < gpu_cols; gc++) {
+        int col = numeric_cols[gc];
+        for (int r = 0; r < rows_count; r++) {
+            double v = 0.0;
+            if (parse_double(rows[r][col], v)) matrix[(size_t)gc * rows_count + r] = v;
         }
     }
 
@@ -768,9 +610,9 @@ static int apply_gpu_scaling(
     check_cuda(cudaMalloc(&d_valids, gpu_cols * sizeof(int)), "alloc valids");
 
     cudaEvent_t cuda_start, cuda_stop;
-    check_cuda(cudaEventCreate(&cuda_start), "create normal cuda work start event");
-    check_cuda(cudaEventCreate(&cuda_stop), "create normal cuda work stop event");
-    check_cuda(cudaEventRecord(cuda_start), "record normal cuda work start event");
+    check_cuda(cudaEventCreate(&cuda_start), "create hybrid cuda start event");
+    check_cuda(cudaEventCreate(&cuda_stop), "create hybrid cuda stop event");
+    check_cuda(cudaEventRecord(cuda_start), "record hybrid cuda start event");
 
     check_cuda(cudaMemcpy(d_values, matrix.data(), matrix.size() * sizeof(double), cudaMemcpyHostToDevice), "copy values");
 
@@ -795,30 +637,20 @@ static int apply_gpu_scaling(
 
     check_cuda(cudaMemcpy(matrix.data(), d_values, matrix.size() * sizeof(double), cudaMemcpyDeviceToHost), "copy scaled values");
 
-    check_cuda(cudaEventRecord(cuda_stop), "record normal cuda work stop event");
-    check_cuda(cudaEventSynchronize(cuda_stop), "sync normal cuda work stop event");
+    check_cuda(cudaEventRecord(cuda_stop), "record hybrid cuda stop event");
+    check_cuda(cudaEventSynchronize(cuda_stop), "sync hybrid cuda stop event");
     float cuda_ms = 0.0f;
-    check_cuda(cudaEventElapsedTime(&cuda_ms, cuda_start, cuda_stop), "elapsed normal cuda work");
+    check_cuda(cudaEventElapsedTime(&cuda_ms, cuda_start, cuda_stop), "elapsed hybrid cuda work");
     g_last_cuda_work_time_ms = cuda_ms;
     cudaEventDestroy(cuda_start);
     cudaEventDestroy(cuda_stop);
 
-    if (parallel) {
-        #pragma omp parallel for schedule(dynamic)
-        for (int gc = 0; gc < gpu_cols; gc++) {
-            int col = numeric_cols[gc];
-            for (int r = 0; r < rows_count; r++) {
-                double v = matrix[(size_t)gc * rows_count + r];
-                if (!isnan(v)) rows[r][col] = format_double(v);
-            }
-        }
-    } else {
-        for (int gc = 0; gc < gpu_cols; gc++) {
-            int col = numeric_cols[gc];
-            for (int r = 0; r < rows_count; r++) {
-                double v = matrix[(size_t)gc * rows_count + r];
-                if (!isnan(v)) rows[r][col] = format_double(v);
-            }
+    #pragma omp parallel for schedule(dynamic)
+    for (int gc = 0; gc < gpu_cols; gc++) {
+        int col = numeric_cols[gc];
+        for (int r = 0; r < rows_count; r++) {
+            double v = matrix[(size_t)gc * rows_count + r];
+            if (!isnan(v)) rows[r][col] = format_double(v);
         }
     }
 
@@ -837,21 +669,7 @@ static int apply_gpu_scaling(
     return gpu_cols;
 }
 
-static int choose_route(long long numeric_work) {
-    if (g_route_mode != ROUTE_AUTO) return g_route_mode;
-    if (numeric_work < g_cpu_threshold) return ROUTE_CPU;
-    if (numeric_work >= g_hybrid_threshold) return ROUTE_HYBRID_CUDA;
-    return ROUTE_NORMAL_CUDA;
-}
-
-static const char *route_name(int route) {
-    if (route == ROUTE_CPU) return "CPU OpenMP";
-    if (route == ROUTE_NORMAL_CUDA) return "Normal CUDA";
-    if (route == ROUTE_HYBRID_CUDA) return "Hybrid CUDA";
-    return "Auto";
-}
-
-extern "C" PreprocessedData* preprocess_cuda(
+extern "C" PreprocessedData* preprocess_cuda_hybrid_standalone(
     char **raw_data,
     char **headers,
     int num_rows,
@@ -859,12 +677,11 @@ extern "C" PreprocessedData* preprocess_cuda(
     int should_remove_duplicates,
     OutlierConfig *outlier_cfg,
     ScalingConfig *scaling_cfg,
-    EncodingConfig *encoding_cfg
+    EncodingConfig *encoding_cfg,
+    int num_cpu_threads
 ) {
+    set_cpu_threads(num_cpu_threads);
     auto start = std::chrono::high_resolution_clock::now();
-    g_last_cuda_work_time_ms = 0.0;
-    g_last_numeric_work = 0;
-    g_last_backend = "unknown";
 
     PreprocessedData *result = (PreprocessedData*)calloc(1, sizeof(PreprocessedData));
     if (!result) return NULL;
@@ -874,34 +691,16 @@ extern "C" PreprocessedData* preprocess_cuda(
     for (int c = 0; c < num_cols; c++) header_vec.push_back(headers[c] ? headers[c] : "");
 
     std::vector<std::vector<std::string>> rows(num_rows);
+    #pragma omp parallel for schedule(static)
     for (int r = 0; r < num_rows; r++) {
         rows[r] = split_simple_csv(raw_data ? raw_data[r] : "");
         rows[r].resize(num_cols);
     }
 
     if (should_remove_duplicates) result->duplicates_found = remove_duplicates_exact(rows);
-
-    std::vector<int> route_numeric_cols = find_numeric_columns(rows, header_vec, scaling_cfg, false);
-    g_last_numeric_work = (long long)rows.size() * (long long)route_numeric_cols.size();
-    int route = (scaling_cfg && !route_numeric_cols.empty()) ? choose_route(g_last_numeric_work) : ROUTE_CPU;
-    if (route == ROUTE_CPU || route == ROUTE_HYBRID_CUDA) set_cpu_threads(g_cpu_threads);
-    bool use_openmp_cpu = route == ROUTE_CPU || route == ROUTE_HYBRID_CUDA;
-
-    result->missing_filled = fill_missing_values(rows, (int)header_vec.size(), use_openmp_cpu);
+    result->missing_filled = fill_missing_values(rows, (int)header_vec.size());
     result->outliers_removed = apply_outliers(rows, header_vec, outlier_cfg);
-
-    std::vector<int> scaling_numeric_cols = find_numeric_columns(rows, header_vec, scaling_cfg, use_openmp_cpu);
-    g_last_numeric_work = (long long)rows.size() * (long long)scaling_numeric_cols.size();
-    if (!scaling_cfg || scaling_numeric_cols.empty()) route = ROUTE_CPU;
-    g_last_backend = route_name(route);
-
-    if (route == ROUTE_CPU) {
-        result->columns_scaled = apply_cpu_scaling(rows, scaling_numeric_cols, scaling_cfg, true);
-    } else if (route == ROUTE_HYBRID_CUDA) {
-        result->columns_scaled = apply_gpu_scaling(rows, scaling_numeric_cols, scaling_cfg, true);
-    } else {
-        result->columns_scaled = apply_gpu_scaling(rows, scaling_numeric_cols, scaling_cfg, false);
-    }
+    result->columns_scaled = apply_gpu_scaling(rows, header_vec, scaling_cfg);
 
     if (encoding_cfg) {
         result->columns_encoded = encoding_cfg->method == 1
@@ -915,26 +714,45 @@ extern "C" PreprocessedData* preprocess_cuda(
     result->data = (char**)calloc(result->num_rows, sizeof(char*));
     if (!result->headers || !result->data) return result;
 
-    if (use_openmp_cpu) {
-        #pragma omp parallel for schedule(static)
-        for (int c = 0; c < result->num_cols; c++) result->headers[c] = dup_cstr(header_vec[c]);
-        #pragma omp parallel for schedule(static)
-        for (int r = 0; r < result->num_rows; r++) {
-            rows[r].resize(result->num_cols);
-            result->data[r] = dup_cstr(join_simple_csv(rows[r]));
-        }
-    } else {
-        for (int c = 0; c < result->num_cols; c++) result->headers[c] = dup_cstr(header_vec[c]);
-        for (int r = 0; r < result->num_rows; r++) {
-            rows[r].resize(result->num_cols);
-            result->data[r] = dup_cstr(join_simple_csv(rows[r]));
-        }
+    #pragma omp parallel for schedule(static)
+    for (int c = 0; c < result->num_cols; c++) result->headers[c] = dup_cstr(header_vec[c]);
+    #pragma omp parallel for schedule(static)
+    for (int r = 0; r < result->num_rows; r++) {
+        rows[r].resize(result->num_cols);
+        result->data[r] = dup_cstr(join_simple_csv(rows[r]));
     }
 
     auto stop = std::chrono::high_resolution_clock::now();
     result->processing_time_ms = std::chrono::duration<double, std::milli>(stop - start).count();
 
     return result;
+}
+
+extern "C" PreprocessedData* preprocess_cuda(
+    char **raw_data,
+    char **headers,
+    int num_rows,
+    int num_cols,
+    int should_remove_duplicates,
+    OutlierConfig *outlier_cfg,
+    ScalingConfig *scaling_cfg,
+    EncodingConfig *encoding_cfg
+) {
+    int num_cpu_threads = 0;
+    const char *env_threads = getenv("CUDA_HYBRID_CPU_THREADS");
+    if (env_threads && *env_threads) num_cpu_threads = atoi(env_threads);
+
+    return preprocess_cuda_hybrid_standalone(
+        raw_data,
+        headers,
+        num_rows,
+        num_cols,
+        should_remove_duplicates,
+        outlier_cfg,
+        scaling_cfg,
+        encoding_cfg,
+        num_cpu_threads
+    );
 }
 
 extern "C" void free_preprocessed_data(PreprocessedData *data) {
@@ -963,3 +781,121 @@ extern "C" char* preprocess_to_json(PreprocessedData *data) {
         data->processing_time_ms);
     return json;
 }
+
+static int scaling_method_from_name(const std::string &name) {
+    if (name == "none") return -1;
+    if (name == "zscore") return 1;
+    if (name == "robust") return 2;
+    return 0;
+}
+
+static bool read_csv_lines(
+    const std::string &path,
+    std::vector<std::string> &headers,
+    std::vector<std::string> &rows
+) {
+    std::ifstream in(path);
+    if (!in) return false;
+
+    std::string line;
+    if (!std::getline(in, line)) return false;
+    if (!line.empty() && line.back() == '\r') line.pop_back();
+    headers = split_simple_csv(line.c_str());
+
+    while (std::getline(in, line)) {
+        if (!line.empty() && line.back() == '\r') line.pop_back();
+        rows.push_back(line);
+    }
+    return true;
+}
+
+static bool write_preprocessed_csv(const std::string &path, const PreprocessedData *data) {
+    std::ofstream out(path);
+    if (!out || !data) return false;
+
+    for (int c = 0; c < data->num_cols; c++) {
+        if (c) out << ",";
+        out << (data->headers[c] ? data->headers[c] : "");
+    }
+    out << "\n";
+
+    for (int r = 0; r < data->num_rows; r++) {
+        out << (data->data[r] ? data->data[r] : "") << "\n";
+    }
+    return true;
+}
+
+#ifndef CUDA_HYBRID_LIBRARY
+int main(int argc, char **argv) {
+    if (argc < 3) {
+        std::cerr
+            << "Usage: " << argv[0]
+            << " input.csv output.csv [cpu_threads] [scale: none|minmax|zscore|robust] [remove_duplicates: 0|1]\n";
+        return 1;
+    }
+
+    std::string input_path = argv[1];
+    std::string output_path = argv[2];
+    int cpu_threads = argc >= 4 ? atoi(argv[3]) : 0;
+    std::string scale_name = argc >= 5 ? argv[4] : "minmax";
+    int remove_duplicates = argc >= 6 ? atoi(argv[5]) : 0;
+
+    std::vector<std::string> header_vec;
+    std::vector<std::string> row_vec;
+    if (!read_csv_lines(input_path, header_vec, row_vec)) {
+        std::cerr << "Failed to read CSV: " << input_path << "\n";
+        return 1;
+    }
+
+    std::vector<char*> header_ptrs(header_vec.size());
+    for (size_t i = 0; i < header_vec.size(); i++) header_ptrs[i] = (char*)header_vec[i].c_str();
+
+    std::vector<char*> row_ptrs(row_vec.size());
+    for (size_t i = 0; i < row_vec.size(); i++) row_ptrs[i] = (char*)row_vec[i].c_str();
+
+    int scale_method = scaling_method_from_name(scale_name);
+    ScalingConfig scaling_cfg;
+    scaling_cfg.method = scale_method < 0 ? 0 : scale_method;
+    scaling_cfg.columns = NULL;
+    scaling_cfg.num_columns = 0;
+    ScalingConfig *scaling_ptr = scale_method < 0 ? NULL : &scaling_cfg;
+
+    PreprocessedData *result = preprocess_cuda_hybrid_standalone(
+        row_ptrs.data(),
+        header_ptrs.data(),
+        (int)row_ptrs.size(),
+        (int)header_ptrs.size(),
+        remove_duplicates,
+        NULL,
+        scaling_ptr,
+        NULL,
+        cpu_threads
+    );
+
+    if (!result) {
+        std::cerr << "Hybrid CUDA preprocessing failed.\n";
+        return 1;
+    }
+
+    if (!write_preprocessed_csv(output_path, result)) {
+        std::cerr << "Failed to write CSV: " << output_path << "\n";
+        free_preprocessed_data(result);
+        return 1;
+    }
+
+    char *json = preprocess_to_json(result);
+    std::cout << "Hybrid CUDA + CPU-threaded standalone analyzer\n";
+    std::cout << "CPU threads: " << get_cpu_threads() << "\n";
+    std::cout << "Input rows: " << row_vec.size() << ", input columns: " << header_vec.size() << "\n";
+    std::cout << "Output: " << output_path << "\n";
+    std::cout << "Preprocess wall time ms: " << result->processing_time_ms << "\n";
+    std::cout << "CUDA work time ms: " << g_last_cuda_work_time_ms << "\n";
+    if (json) {
+        std::cout << json << "\n";
+        free(json);
+    }
+
+    free_preprocessed_data(result);
+    return 0;
+}
+#endif
