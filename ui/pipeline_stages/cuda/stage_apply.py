@@ -66,8 +66,8 @@ class StageApply:
             info,
             text=(
                 "Backend: modules/analyzer_cuda -> libpreprocessor_cuda.so\n"
-                "GPU path: numeric column min/max reductions and min-max scaling\n"
-                "CPU path: multithreaded CSV row preparation, type detection, and result assembly"
+                "GPU path: numeric column reductions plus min-max / z-score scaling\n"
+                "CPU path: CSV preparation, duplicates, missing values, outliers, robust scaling, encoding, and result assembly"
             ),
             style="Muted.TLabel",
             justify="left",
@@ -158,7 +158,7 @@ class StageApply:
                 action = cfg.get("action") or cfg.get("global_strategy") or cfg.get("method") or cfg.get("treatment") or "configured"
                 lines.append(f"  - {name}: {action}")
             lines.append("")
-            lines.append("Current CUDA backend applies GPU min-max scaling to selected numeric columns.")
+            lines.append("Current CUDA backend honors the configured preprocessing stages; GPU kernels accelerate numeric min-max and z-score scaling.")
         except Exception:
             lines = ["  (Import a dataset and configure stages first)"]
 

@@ -14,13 +14,13 @@ all: $(TARGET)
 $(TARGET): $(SOURCES) $(HEADERS)
 	mkdir -p $(LIB_DIR)
 	$(NVCC) $(NVCCFLAGS) -Xcompiler -fopenmp -DCUDA_HYBRID_LIBRARY $(LDFLAGS) -o $@ $(SOURCES)
-	@echo "Built hybrid CUDA preprocessor for app: $@"
+	@echo "Built columnar CUDA preprocessor for app: $@"
 
 standalone: $(STANDALONE_TARGET)
 
 $(STANDALONE_TARGET): $(STANDALONE_SOURCES) $(HEADERS)
 	$(NVCC) $(NVCCFLAGS) -Xcompiler -fopenmp -o $@ $(STANDALONE_SOURCES)
-	@echo "Built hybrid CUDA + CPU-threaded standalone analyzer: $@"
+	@echo "Built columnar CUDA standalone analyzer: $@"
 
 clean:
 	rm -f $(TARGET) $(STANDALONE_TARGET)

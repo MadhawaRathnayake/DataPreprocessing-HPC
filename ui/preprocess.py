@@ -16,7 +16,7 @@ from lib_ctypes import (
     python_data_to_c, 
     c_preprocessed_data_to_python,
     OutlierConfig, ScalingConfig, EncodingConfig,
-    MissingConfig, ColumnMissingConfig
+    MissingConfig, ColumnMissingConfig, DuplicateConfigCuda
 )
 from metrics import MetricsCollector
 from logging_config import get_logger
@@ -106,10 +106,13 @@ class PreprocessingPipeline:
         
         # Check if Duplicates stage is enabled (action != "skip")
         remove_duplicates = 0
+        duplicate_cfg = None
         if configs and len(configs) > 1:
             dup_config = configs[1]
             if isinstance(dup_config, dict) and dup_config.get("action") != "skip":
                 remove_duplicates = 1
+                if self.backend_type == "cuda":
+                    duplicate_cfg = self._build_cuda_duplicate_config(dup_config, headers)
         
         missing_cfg = self._build_missing_config(configs[2] if configs and len(configs) > 2 else None, headers)
         outlier_cfg = self._build_outlier_config(configs[3] if configs and len(configs) > 3 else None, headers)
@@ -155,6 +158,8 @@ class PreprocessingPipeline:
             elif self.backend_type == "cuda":
                 c_result = self.lib.lib.preprocess_cuda(
                     c_data_ptr, c_headers_ptr, num_rows, num_cols, remove_duplicates,
+                    byref(duplicate_cfg) if duplicate_cfg else None,
+                    byref(missing_cfg) if missing_cfg else None,
                     byref(outlier_cfg) if outlier_cfg else None,
                     byref(scaling_cfg) if scaling_cfg else None,
                     byref(encoding_cfg) if encoding_cfg else None
@@ -207,6 +212,26 @@ class PreprocessingPipeline:
         except Exception as e:
             self.logger.error(f"C preprocessing failed: {e}")
             return data, headers, {'error': str(e)}
+
+    def _build_cuda_duplicate_config(self, config: Optional[Dict], headers: List[str]) -> Optional[DuplicateConfigCuda]:
+        """Build CUDA duplicate config from Python dict."""
+        if not config or config.get("action") == "skip":
+            return None
+
+        dup_cfg = DuplicateConfigCuda()
+        dup_cfg.action = 1 if config.get("action") == "drop_subset" else 0
+        dup_cfg.keep = {"first": 0, "last": 1, "none": 2}.get(config.get("keep", "first"), 0)
+
+        columns = config.get("col_subset") or headers
+        dup_cfg.num_columns = len(columns)
+        self._c_duplicate_columns = (c_char_p * len(columns))()
+        self._c_duplicate_strings = []
+        for i, col in enumerate(columns):
+            encoded = col.encode("utf-8") if isinstance(col, str) else col
+            self._c_duplicate_strings.append(encoded)
+            self._c_duplicate_columns[i] = encoded
+        dup_cfg.columns = self._c_duplicate_columns
+        return dup_cfg
     
     def _prepare_c_data(self, data: List[List[str]], headers: List[str]) -> Tuple:
         """Convert Python data to ctypes format (CSV-formatted strings)
@@ -299,10 +324,15 @@ class PreprocessingPipeline:
         
         # Treatment: 0=remove, 1=cap, 2=flag
         treatment_str = config.get('treatment', 'remove').lower()
+        if treatment_str == 'skip':
+            return None
         outlier_cfg.treatment = {'remove': 0, 'cap': 1, 'flag': 2}.get(treatment_str, 0)
         
         # Threshold
-        outlier_cfg.threshold = config.get('threshold', 1.5)
+        if method_str == 'zscore':
+            outlier_cfg.threshold = float(config.get('zscore_thr', config.get('threshold', 3.0)))
+        else:
+            outlier_cfg.threshold = float(config.get('iqr_mult', config.get('threshold', 1.5)))
         
         # Columns to process
         columns = config.get('columns', headers)
@@ -320,9 +350,9 @@ class PreprocessingPipeline:
 
         scaling_cfg = ScalingConfig()
 
-        # Method: 0=min-max, 1=z-score, 2=standard
+        # Method: 0=min-max, 1=z-score, 2=robust
         method_str = config.get('method', 'minmax').lower()
-        scaling_cfg.method = {'minmax': 0, 'zscore': 1, 'standard': 2}.get(method_str, 0)
+        scaling_cfg.method = {'minmax': 0, 'zscore': 1, 'standard': 2, 'robust': 2}.get(method_str, 0)
         # Columns to scale
         columns = config.get('columns', headers)
         scaling_cfg.num_columns = len(columns)
@@ -338,6 +368,8 @@ class PreprocessingPipeline:
             return None
         
         encoding_cfg = EncodingConfig()
+        encoding_cfg.methods = None
+        encoding_cfg.drop_original = 1 if config.get('drop_original', True) else 0
         
         # Method: 0=label, 1=onehot
         method_str = config.get('method', 'label').lower()
@@ -366,7 +398,19 @@ class PreprocessingPipeline:
             
         encoding_cfg.num_columns = len(columns)
         encoding_cfg.columns = (c_char_p * len(columns))()
+        self._c_encoding_columns = encoding_cfg.columns
+        self._c_encoding_strings = []
         for i, col in enumerate(columns):
-            encoding_cfg.columns[i] = col.encode('utf-8') if isinstance(col, str) else col
+            encoded = col.encode('utf-8') if isinstance(col, str) else col
+            self._c_encoding_strings.append(encoded)
+            encoding_cfg.columns[i] = encoded
+
+        column_methods = config.get('column_methods', {})
+        if isinstance(column_methods, dict):
+            self._c_encoding_methods = (c_int * len(columns))()
+            for i, col in enumerate(columns):
+                method = column_methods.get(col, '')
+                self._c_encoding_methods[i] = 1 if "one-hot" in method.lower() else 0
+            encoding_cfg.methods = self._c_encoding_methods
         
         return encoding_cfg

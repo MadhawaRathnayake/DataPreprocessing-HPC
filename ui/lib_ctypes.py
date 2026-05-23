@@ -126,6 +126,20 @@ EncodingConfig._fields_ = [
     ("method", c_int),                    # 0=label, 1=onehot
     ("columns", POINTER(c_char_p)),       # Column names to encode
     ("num_columns", c_int),               # Number of columns
+    ("methods", POINTER(c_int)),          # Optional per-column methods: 0=label, 1=onehot
+    ("drop_original", c_int),             # Drop source column after one-hot
+]
+
+
+class DuplicateConfigCuda(Structure):
+    """Configuration for CUDA duplicate handling"""
+    pass
+
+DuplicateConfigCuda._fields_ = [
+    ("action", c_int),                    # 0=exact row, 1=subset
+    ("keep", c_int),                      # 0=first, 1=last, 2=none
+    ("columns", POINTER(c_char_p)),
+    ("num_columns", c_int),
 ]
 
 
@@ -340,6 +354,7 @@ class CAnalyzerLib:
 
         self.lib.preprocess_cuda.argtypes = [
             POINTER(c_char_p), POINTER(c_char_p), c_int, c_int, c_int,
+            POINTER(DuplicateConfigCuda), POINTER(MissingConfig),
             POINTER(OutlierConfig), POINTER(ScalingConfig), POINTER(EncodingConfig)
         ]
         self.lib.preprocess_cuda.restype = POINTER(PreprocessedDataCuda)

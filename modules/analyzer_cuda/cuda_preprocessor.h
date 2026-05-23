@@ -23,7 +23,28 @@ typedef struct {
     int method;          /* 0=label, 1=onehot */
     char **columns;
     int num_columns;
+    int *methods;        /* Optional per-column methods: 0=label, 1=onehot */
+    int drop_original;   /* For one-hot columns */
 } EncodingConfig;
+
+typedef struct {
+    char *column_name;
+    int strategy;        /* 0=drop row, 1=mean, 2=median, 3=mode, 4=constant, 5=forward-fill */
+    char *fill_value;
+} ColumnMissingConfig;
+
+typedef struct {
+    ColumnMissingConfig *configs;
+    int num_configs;
+    double drop_threshold;
+} MissingConfig;
+
+typedef struct {
+    int action;          /* 0=exact row, 1=subset */
+    int keep;            /* 0=first, 1=last, 2=none */
+    char **columns;
+    int num_columns;
+} DuplicateConfig;
 
 typedef struct {
     char **data;
@@ -44,6 +65,8 @@ PreprocessedData* preprocess_cuda(
     int num_rows,
     int num_cols,
     int should_remove_duplicates,
+    DuplicateConfig *duplicate_cfg,
+    MissingConfig *missing_cfg,
     OutlierConfig *outlier_cfg,
     ScalingConfig *scaling_cfg,
     EncodingConfig *encoding_cfg
