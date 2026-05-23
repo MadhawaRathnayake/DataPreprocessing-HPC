@@ -25,7 +25,7 @@ from logging_config import get_logger
 class PreprocessingPipeline:
     """
     Main pipeline orchestrator that applies transformations using pure C code.
-    Supports three backends: Serial, OpenMP (parallel), MPI (distributed).
+    Supports four backends: Serial, OpenMP (parallel), MPI (distributed), CUDA (GPU).
     All transformations are performed in compiled C, bypassing Python GIL.
     """
     
@@ -35,7 +35,7 @@ class PreprocessingPipeline:
         -----------
         backend_lib : CAnalyzerLib (ignored - loads preprocessor library)
         backend_type : str
-            One of: "serial", "openmp", "mpi"
+            One of: "serial", "openmp", "mpi", "cuda"
         num_threads : int
             For OpenMP backend, number of threads to use
         num_processes : int
@@ -147,6 +147,14 @@ class PreprocessingPipeline:
                 c_result = self.lib.lib.preprocess_mpi(
                     c_data_ptr, c_headers_ptr, num_rows, num_cols, self.num_processes, remove_duplicates,
                     byref(missing_cfg) if missing_cfg else None,
+                    byref(outlier_cfg) if outlier_cfg else None,
+                    byref(scaling_cfg) if scaling_cfg else None,
+                    byref(encoding_cfg) if encoding_cfg else None
+                )
+
+            elif self.backend_type == "cuda":
+                c_result = self.lib.lib.preprocess_cuda(
+                    c_data_ptr, c_headers_ptr, num_rows, num_cols, remove_duplicates,
                     byref(outlier_cfg) if outlier_cfg else None,
                     byref(scaling_cfg) if scaling_cfg else None,
                     byref(encoding_cfg) if encoding_cfg else None
