@@ -202,60 +202,128 @@ static void replace_column_value(char *row, int col, int num_cols, const char *n
     strcpy(row, new_row);
 }
 
-/* Stage 2: Impute missing values with mean/mode */
-static void impute_missing_values(char **data, int num_rows, char **headers, 
-                                   int num_cols, int *missing_count) {
+/* Helper: Get column value manually (handles empty cells ,,) */
+static void get_column_value_manual(const char *row, int col, char *dest, int dest_size) {
+    if (!row) {
+        dest[0] = '\0';
+        return;
+    }
+    const char *curr = row;
+    for (int c = 0; c < col; c++) {
+        const char *next = strchr(curr, ',');
+        if (next) curr = next + 1;
+        else { curr = NULL; break; }
+    }
+    
+    if (curr) {
+        const char *end = strchr(curr, ',');
+        int len = end ? (int)(end - curr) : (int)strlen(curr);
+        if (len >= dest_size) len = dest_size - 1;
+        strncpy(dest, curr, len);
+        dest[len] = '\0';
+    } else {
+        dest[0] = '\0';
+    }
+}
+
+/* Stage 2: Handle missing values (Drop row, Mean, Median, etc.) */
+static char** handle_missing_values(char **data, int *num_rows, char **headers, 
+                                     int num_cols, MissingConfig *cfg, int *missing_count) {
+    log_msg("[handle_missing_values] Starting: %d rows", *num_rows);
     *missing_count = 0;
     
-    for (int col = 0; col < num_cols; col++) {
-        /* Calculate mean for numeric columns */
-        double sum = 0.0;
-        int numeric_count = 0;
-        int has_missing = 0;
-        
-        for (int row = 0; row < num_rows; row++) {
-            if (!data[row]) continue;
-            char temp[4096];
-            if (strlen(data[row]) >= 4000) continue;
-            strcpy(temp, data[row]);  /* IMPORTANT: Make a copy before strtok() */
-            
-            char *val = strtok(temp, ",");
-            for (int c = 0; c < col; c++) {
-                if (val) val = strtok(NULL, ",");
-            }
-            
-            if (is_missing(val)) {
-                has_missing = 1;
-            } else if (is_numeric(val)) {
-                sum += atof(val);
-                numeric_count++;
-            }
-        }
-        
-        if (!has_missing) continue;
-        
-        double mean = (numeric_count > 0) ? sum / numeric_count : 0.0;
-        
-        /* Impute missing values */
-        for (int row = 0; row < num_rows; row++) {
-            if (!data[row]) continue;
-            char temp[4096];
-            if (strlen(data[row]) >= 4000) continue;
-            strcpy(temp, data[row]);
-            
-            char *val = strtok(temp, ",");
-            for (int c = 0; c < col; c++) {
-                if (val) val = strtok(NULL, ",");
-            }
-            
-            if (is_missing(val)) {
-                char replacement[50];
-                snprintf(replacement, sizeof(replacement), "%.2f", mean);
-                replace_column_value(data[row], col, num_cols, replacement);
-                (*missing_count)++;
+    if (!cfg || cfg->num_configs == 0) {
+        log_msg("[handle_missing_values] No config, skipping");
+        return data;
+    }
+
+    /* 1. First pass: Handle "Drop row" */
+    int *should_drop = (int*)calloc(*num_rows, sizeof(int));
+    int drop_count = 0;
+
+    for (int i = 0; i < cfg->num_configs; i++) {
+        int col = get_column_index(headers, cfg->configs[i].column_name, num_cols);
+        if (col < 0) continue;
+
+        if (cfg->configs[i].strategy == 0) { /* Drop row */
+            for (int r = 0; r < *num_rows; r++) {
+                if (should_drop[r]) continue;
+                
+                char val[4096];
+                get_column_value_manual(data[r], col, val, sizeof(val));
+                
+                if (is_missing(val)) {
+                    should_drop[r] = 1;
+                    drop_count++;
+                }
             }
         }
     }
+
+    log_msg("[handle_missing_values] Dropping %d rows due to missing values", drop_count);
+
+    /* Filter rows if any dropped */
+    char **current_data = data;
+    if (drop_count > 0) {
+        char **filtered_data = (char**)malloc((*num_rows - drop_count) * sizeof(char*));
+        int k = 0;
+        for (int r = 0; r < *num_rows; r++) {
+            if (!should_drop[r]) {
+                filtered_data[k++] = data[r];
+            } else {
+                free(data[r]); /* Free dropped row */
+            }
+        }
+        free(data);
+        *num_rows = k;
+        current_data = filtered_data;
+    }
+    free(should_drop);
+
+    /* 2. Second pass: Handle imputation for remaining rows */
+    for (int i = 0; i < cfg->num_configs; i++) {
+        int col = get_column_index(headers, cfg->configs[i].column_name, num_cols);
+        if (col < 0) continue;
+        int strategy = cfg->configs[i].strategy;
+
+        if (strategy == 1) { /* Mean */
+            double sum = 0.0;
+            int count = 0;
+            for (int r = 0; r < *num_rows; r++) {
+                char val[4096];
+                get_column_value_manual(current_data[r], col, val, sizeof(val));
+                if (!is_missing(val) && is_numeric(val)) {
+                    sum += atof(val);
+                    count++;
+                }
+            }
+            if (count > 0) {
+                double mean = sum / count;
+                char replacement[50];
+                snprintf(replacement, sizeof(replacement), "%.2f", mean);
+                for (int r = 0; r < *num_rows; r++) {
+                    char val[4096];
+                    get_column_value_manual(current_data[r], col, val, sizeof(val));
+                    if (is_missing(val)) {
+                        replace_column_value(current_data[r], col, num_cols, replacement);
+                        (*missing_count)++;
+                    }
+                }
+            }
+        } else if (strategy == 4) { /* Constant */
+            const char *replacement = cfg->configs[i].fill_value;
+            for (int r = 0; r < *num_rows; r++) {
+                char val[4096];
+                get_column_value_manual(current_data[r], col, val, sizeof(val));
+                if (is_missing(val)) {
+                    replace_column_value(current_data[r], col, num_cols, replacement);
+                    (*missing_count)++;
+                }
+            }
+        }
+    }
+
+    return current_data;
 }
 
 /* Stage 3: Detect and remove outliers using IQR method */
@@ -283,13 +351,8 @@ static char** remove_outliers(char **data, int *num_rows, char **headers,
         int count = 0;
         
         for (int row = 0; row < *num_rows; row++) {
-            if (!data[row]) continue;
-            char temp[4096];  /* Safe fixed size instead of VLA */
-            if (strlen(data[row]) >= 4000) continue;
-            strcpy(temp, data[row]);
-            char *val = strtok(temp, ",");
-            
-            for (int c = 0; c < col; c++) val = strtok(NULL, ",");
+            char val[4096];
+            get_column_value_manual(data[row], col, val, sizeof(val));
             
             if (is_numeric(val)) {
                 values[count] = atof(val);
@@ -340,12 +403,10 @@ static char** remove_outliers(char **data, int *num_rows, char **headers,
     /* Keep only non-outlier rows */
     for (int row = 0; row < *num_rows; row++) {
         if (!is_outlier[row]) {
-            filtered[filtered_count] = (char*)malloc(4096);  /* Safe fixed buffer */
-            if (filtered[filtered_count] && strlen(data[row]) < 4000) {
+            filtered[filtered_count] = (char*)malloc(strlen(data[row]) + 1);
+            if (filtered[filtered_count]) {
                 strcpy(filtered[filtered_count], data[row]);
                 filtered_count++;
-            } else {
-                log_msg("[remove_outliers] Row %d too large or malloc failed", row);
             }
         } else {
             (*outlier_count)++;
@@ -372,38 +433,26 @@ static void scale_columns(char **data, int num_rows, char **headers,
         
         /* Find min/max */
         double min_val = 1e10, max_val = -1e10;
+        int found = 0;
         for (int row = 0; row < num_rows; row++) {
-            if (!data[row]) continue;
-            char temp[4096];
-            if (strlen(data[row]) >= 4000) continue;
-            strcpy(temp, data[row]);
-            char *val = strtok(temp, ",");
-            
-            for (int c = 0; c < col; c++) {
-                if (val) val = strtok(NULL, ",");
-            }
+            char val[4096];
+            get_column_value_manual(data[row], col, val, sizeof(val));
             
             if (is_numeric(val)) {
                 double v = atof(val);
                 if (v < min_val) min_val = v;
                 if (v > max_val) max_val = v;
+                found = 1;
             }
         }
         
-        if (min_val >= max_val) continue; /* Skip if all same values */
+        if (!found || min_val >= max_val) continue; /* Skip if all same values or no numeric */
         
         /* Normalize (min-max scaling to [0,1]) */
         double range = max_val - min_val;
         for (int row = 0; row < num_rows; row++) {
-            if (!data[row]) continue;
-            char temp[4096];
-            if (strlen(data[row]) >= 4000) continue;
-            strcpy(temp, data[row]);
-            char *val = strtok(temp, ",");
-            
-            for (int c = 0; c < col; c++) {
-                if (val) val = strtok(NULL, ",");
-            }
+            char val[4096];
+            get_column_value_manual(data[row], col, val, sizeof(val));
             
             if (is_numeric(val)) {
                 double v = atof(val);
@@ -438,17 +487,8 @@ static void encode_columns(char **data, int num_rows, char **headers,
         int *encoding = (int*)malloc(num_rows * sizeof(int));
         
         for (int row = 0; row < num_rows; row++) {
-            if (!data[row]) continue;
-            char temp[4096];
-            if (strlen(data[row]) >= 4000) continue;
-            strcpy(temp, data[row]);
-            char *val = strtok(temp, ",");
-            
-            for (int c = 0; c < col; c++) {
-                if (val) val = strtok(NULL, ",");
-            }
-            
-            if (!val) val = "";
+            char val[4096];
+            get_column_value_manual(data[row], col, val, sizeof(val));
             
             /* Find or create encoding for this value */
             int found = -1;
@@ -471,8 +511,6 @@ static void encode_columns(char **data, int num_rows, char **headers,
         
         /* Replace values with numeric encodings */
         for (int row = 0; row < num_rows; row++) {
-            if (!data[row] || strlen(data[row]) >= 4000) continue;
-            
             char encoded[50];
             snprintf(encoded, sizeof(encoded), "%d", encoding[row]);
             replace_column_value(data[row], col, num_cols, encoded);
@@ -496,6 +534,7 @@ PreprocessedData* preprocess_serial(
     int num_rows,
     int num_cols,
     int should_remove_duplicates,
+    MissingConfig *missing_cfg,
     OutlierConfig *outlier_cfg,
     ScalingConfig *scaling_cfg,
     EncodingConfig *encoding_cfg
@@ -548,13 +587,16 @@ PreprocessedData* preprocess_serial(
         result->rows_removed += result->duplicates_found;
     }
     
-    /* Stage 2: Impute missing values */
-    log_msg("[STAGE2] Starting impute_missing_values: %d rows", result->num_rows);
+    /* Stage 2: Handle missing values */
+    log_msg("[STAGE2] Starting handle_missing_values: %d rows", result->num_rows);
     clock_t stage_start_missing = clock();
-    impute_missing_values(data, result->num_rows, headers, num_cols, &result->missing_filled);
+    int old_rows = result->num_rows;
+    data = handle_missing_values(data, &result->num_rows, headers, num_cols, missing_cfg, &result->missing_filled);
     result->missing_time_ms = (clock() - stage_start_missing) * 1000.0 / CLOCKS_PER_SEC;
-    log_msg("[STAGE2] Completed: %d values filled (%.2f ms)", 
-            result->missing_filled, result->missing_time_ms);
+    int dropped_missing = old_rows - result->num_rows;
+    log_msg("[STAGE2] Completed: %d rows dropped, %d values imputed (%.2f ms)", 
+            dropped_missing, result->missing_filled, result->missing_time_ms);
+    result->rows_removed += dropped_missing;
     
     /* Stage 3: Remove outliers */
     if (outlier_cfg) {
@@ -654,6 +696,7 @@ PreprocessedData* preprocess_openmp(
     int num_cols,
     int num_threads,
     int should_remove_duplicates,
+    MissingConfig *missing_cfg,
     OutlierConfig *outlier_cfg,
     ScalingConfig *scaling_cfg,
     EncodingConfig *encoding_cfg
@@ -661,7 +704,7 @@ PreprocessedData* preprocess_openmp(
     /* For now, delegate to serial version */
     /* TODO: Implement OpenMP parallelization for stages 3, 4, 5 */
     return preprocess_serial(raw_data, headers, num_rows, num_cols,
-                           should_remove_duplicates, outlier_cfg, scaling_cfg, encoding_cfg);
+                           should_remove_duplicates, missing_cfg, outlier_cfg, scaling_cfg, encoding_cfg);
 }
 
 /* MPI version (placeholder for now) */
@@ -672,6 +715,7 @@ PreprocessedData* preprocess_mpi(
     int num_cols,
     int num_processes,
     int should_remove_duplicates,
+    MissingConfig *missing_cfg,
     OutlierConfig *outlier_cfg,
     ScalingConfig *scaling_cfg,
     EncodingConfig *encoding_cfg
@@ -679,5 +723,5 @@ PreprocessedData* preprocess_mpi(
     /* For now, delegate to serial version */
     /* TODO: Implement MPI parallelization for large datasets */
     return preprocess_serial(raw_data, headers, num_rows, num_cols,
-                           should_remove_duplicates, outlier_cfg, scaling_cfg, encoding_cfg);
+                           should_remove_duplicates, missing_cfg, outlier_cfg, scaling_cfg, encoding_cfg);
 }

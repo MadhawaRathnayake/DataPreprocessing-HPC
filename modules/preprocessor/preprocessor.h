@@ -53,6 +53,18 @@ typedef struct {
     int num_columns;
 } EncodingConfig;
 
+typedef struct {
+    char *column_name;
+    int strategy;          /* 0=drop row, 1=mean, 2=median, 3=mode, 4=constant, 5=forward-fill */
+    char *fill_value;      /* For constant strategy */
+} ColumnMissingConfig;
+
+typedef struct {
+    ColumnMissingConfig *configs;
+    int num_configs;
+    double drop_threshold;
+} MissingConfig;
+
 /* Function declarations */
 
 /* Serial preprocessing */
@@ -62,6 +74,7 @@ PreprocessedData* preprocess_serial(
     int num_rows,
     int num_cols,
     int should_remove_duplicates,
+    MissingConfig *missing_cfg,
     OutlierConfig *outlier_cfg,
     ScalingConfig *scaling_cfg,
     EncodingConfig *encoding_cfg
@@ -75,6 +88,7 @@ PreprocessedData* preprocess_openmp(
     int num_cols,
     int num_threads,
     int should_remove_duplicates,
+    MissingConfig *missing_cfg,
     OutlierConfig *outlier_cfg,
     ScalingConfig *scaling_cfg,
     EncodingConfig *encoding_cfg
@@ -88,6 +102,7 @@ PreprocessedData* preprocess_mpi(
     int num_cols,
     int num_processes,
     int should_remove_duplicates,
+    MissingConfig *missing_cfg,
     OutlierConfig *outlier_cfg,
     ScalingConfig *scaling_cfg,
     EncodingConfig *encoding_cfg

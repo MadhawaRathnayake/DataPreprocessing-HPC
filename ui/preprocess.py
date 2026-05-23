@@ -15,7 +15,8 @@ from lib_ctypes import (
     load_preprocessor, 
     python_data_to_c, 
     c_preprocessed_data_to_python,
-    OutlierConfig, ScalingConfig, EncodingConfig
+    OutlierConfig, ScalingConfig, EncodingConfig,
+    MissingConfig, ColumnMissingConfig
 )
 from metrics import MetricsCollector
 from logging_config import get_logger
@@ -110,6 +111,7 @@ class PreprocessingPipeline:
             if isinstance(dup_config, dict) and dup_config.get("action") != "skip":
                 remove_duplicates = 1
         
+        missing_cfg = self._build_missing_config(configs[2] if configs and len(configs) > 2 else None, headers)
         outlier_cfg = self._build_outlier_config(configs[3] if configs and len(configs) > 3 else None, headers)
         scaling_cfg = self._build_scaling_config(configs[4] if configs and len(configs) > 4 else None, headers)
         encoding_cfg = self._build_encoding_config(configs[5] if configs and len(configs) > 5 else None, headers)
@@ -126,6 +128,7 @@ class PreprocessingPipeline:
             if self.backend_type == "serial":
                 c_result = self.lib.lib.preprocess_serial(
                     c_data_ptr, c_headers_ptr, num_rows, num_cols, remove_duplicates,
+                    byref(missing_cfg) if missing_cfg else None,
                     byref(outlier_cfg) if outlier_cfg else None,
                     byref(scaling_cfg) if scaling_cfg else None,
                     byref(encoding_cfg) if encoding_cfg else None
@@ -134,6 +137,7 @@ class PreprocessingPipeline:
             elif self.backend_type == "openmp":
                 c_result = self.lib.lib.preprocess_openmp(
                     c_data_ptr, c_headers_ptr, num_rows, num_cols, self.num_threads, remove_duplicates,
+                    byref(missing_cfg) if missing_cfg else None,
                     byref(outlier_cfg) if outlier_cfg else None,
                     byref(scaling_cfg) if scaling_cfg else None,
                     byref(encoding_cfg) if encoding_cfg else None
@@ -142,6 +146,7 @@ class PreprocessingPipeline:
             elif self.backend_type == "mpi":
                 c_result = self.lib.lib.preprocess_mpi(
                     c_data_ptr, c_headers_ptr, num_rows, num_cols, self.num_processes, remove_duplicates,
+                    byref(missing_cfg) if missing_cfg else None,
                     byref(outlier_cfg) if outlier_cfg else None,
                     byref(scaling_cfg) if scaling_cfg else None,
                     byref(encoding_cfg) if encoding_cfg else None
@@ -228,6 +233,51 @@ class PreprocessingPipeline:
         # Return the arrays directly (not as pointers) so they stay alive
         return c_data, c_headers, num_rows, num_cols
     
+    def _build_missing_config(self, config: Optional[Dict], headers: List[str]) -> Optional[MissingConfig]:
+        """Build C missing config struct from Python dict"""
+        if not config or config.get('global_strategy') == 'skip':
+            return None
+
+        missing_cfg = MissingConfig()
+        missing_cfg.drop_threshold = float(config.get('drop_threshold', 80.0))
+        
+        strategy_map = {
+            "Drop row": 0,
+            "Mean": 1,
+            "Median": 2,
+            "Mode": 3,
+            "Fill constant": 4,
+            "Forward-fill": 5
+        }
+        
+        column_configs = config.get('column_config', {})
+        if not column_configs or config.get('global_strategy') == 'apply_all':
+            # If apply_all, use global_common for all headers
+            common_strat = config.get('global_common', 'Drop row')
+            column_configs = {h: {"strategy": common_strat, "fill_val": ""} for h in headers}
+        
+        if not column_configs:
+            return None
+            
+        num_configs = len(column_configs)
+        missing_cfg.num_configs = num_configs
+        
+        # We need to keep the ColumnMissingConfig objects and their strings alive
+        self._c_missing_col_configs = (ColumnMissingConfig * num_configs)()
+        self._c_missing_strings = [] # Keep strings alive
+        
+        for i, (col, cfg) in enumerate(column_configs.items()):
+            c_col = col.encode('utf-8')
+            c_fill = str(cfg.get('fill_val', '')).encode('utf-8')
+            self._c_missing_strings.extend([c_col, c_fill])
+            
+            self._c_missing_col_configs[i].column_name = c_col
+            self._c_missing_col_configs[i].strategy = strategy_map.get(cfg.get('strategy'), 0)
+            self._c_missing_col_configs[i].fill_value = c_fill
+            
+        missing_cfg.configs = self._c_missing_col_configs
+        return missing_cfg
+
     def _build_outlier_config(self, config: Optional[Dict], headers: List[str]) -> Optional[OutlierConfig]:
         """Build C outlier config struct from Python dict"""
         if not config:
@@ -288,8 +338,24 @@ class PreprocessingPipeline:
         # Columns to encode
         columns = config.get('columns', [])
         if not columns:
-            columns = config.get('column_methods', {}).keys() if isinstance(config.get('column_methods'), dict) else []
+            methods = config.get('column_methods', {})
+            if isinstance(methods, dict):
+                # Filter out columns marked as 'Skip'
+                columns = [c for c, m in methods.items() if m != "Skip"]
+                
+                # Update method if provided per-column (pick first non-skip)
+                if columns:
+                    first_method = methods[columns[0]].lower()
+                    if "one-hot" in first_method:
+                        encoding_cfg.method = 1
+                    else:
+                        encoding_cfg.method = 0
+            else:
+                columns = []
         
+        if not columns:
+            return None
+            
         encoding_cfg.num_columns = len(columns)
         encoding_cfg.columns = (c_char_p * len(columns))()
         for i, col in enumerate(columns):

@@ -128,6 +128,28 @@ EncodingConfig._fields_ = [
 ]
 
 
+class ColumnMissingConfig(Structure):
+    """Configuration for a single column's missing value strategy"""
+    pass
+
+ColumnMissingConfig._fields_ = [
+    ("column_name", c_char_p),
+    ("strategy", c_int),
+    ("fill_value", c_char_p),
+]
+
+
+class MissingConfig(Structure):
+    """Configuration for missing value handling"""
+    pass
+
+MissingConfig._fields_ = [
+    ("configs", POINTER(ColumnMissingConfig)),
+    ("num_configs", c_int),
+    ("drop_threshold", c_double),
+]
+
+
 class PreprocessedData(Structure):
     """Result structure from C preprocessing"""
     pass
@@ -251,32 +273,36 @@ class CAnalyzerLib:
             return
         
         # preprocess_serial(char **data, char **headers, int num_rows, int num_cols,
-        #                   int remove_duplicates, OutlierConfig *outlier_cfg,
-        #                   ScalingConfig *scaling_cfg, EncodingConfig *encoding_cfg) 
+        #                   int remove_duplicates, MissingConfig *missing_cfg,
+        #                   OutlierConfig *outlier_cfg, ScalingConfig *scaling_cfg,
+        #                   EncodingConfig *encoding_cfg) 
         #                   -> PreprocessedData*
         self.lib.preprocess_serial.argtypes = [
             POINTER(c_char_p), POINTER(c_char_p), c_int, c_int, c_int,
-            POINTER(OutlierConfig), POINTER(ScalingConfig), POINTER(EncodingConfig)
+            POINTER(MissingConfig), POINTER(OutlierConfig), 
+            POINTER(ScalingConfig), POINTER(EncodingConfig)
         ]
         self.lib.preprocess_serial.restype = POINTER(PreprocessedData)
         
         # preprocess_openmp(char **data, char **headers, int num_rows, int num_cols,
         #                   int num_threads, int should_remove_duplicates,
-        #                   OutlierConfig *outlier_cfg, ScalingConfig *scaling_cfg,
-        #                   EncodingConfig *encoding_cfg) -> PreprocessedData*
+        #                   MissingConfig *missing_cfg, OutlierConfig *outlier_cfg,
+        #                   ScalingConfig *scaling_cfg, EncodingConfig *encoding_cfg) -> PreprocessedData*
         self.lib.preprocess_openmp.argtypes = [
             POINTER(c_char_p), POINTER(c_char_p), c_int, c_int, c_int, c_int,
-            POINTER(OutlierConfig), POINTER(ScalingConfig), POINTER(EncodingConfig)
+            POINTER(MissingConfig), POINTER(OutlierConfig), 
+            POINTER(ScalingConfig), POINTER(EncodingConfig)
         ]
         self.lib.preprocess_openmp.restype = POINTER(PreprocessedData)
         
         # preprocess_mpi(char **data, char **headers, int num_rows, int num_cols,
         #                int num_processes, int should_remove_duplicates,
-        #                OutlierConfig *outlier_cfg, ScalingConfig *scaling_cfg,
-        #                EncodingConfig *encoding_cfg) -> PreprocessedData*
+        #                MissingConfig *missing_cfg, OutlierConfig *outlier_cfg,
+        #                ScalingConfig *scaling_cfg, EncodingConfig *encoding_cfg) -> PreprocessedData*
         self.lib.preprocess_mpi.argtypes = [
             POINTER(c_char_p), POINTER(c_char_p), c_int, c_int, c_int, c_int,
-            POINTER(OutlierConfig), POINTER(ScalingConfig), POINTER(EncodingConfig)
+            POINTER(MissingConfig), POINTER(OutlierConfig), 
+            POINTER(ScalingConfig), POINTER(EncodingConfig)
         ]
         self.lib.preprocess_mpi.restype = POINTER(PreprocessedData)
         
