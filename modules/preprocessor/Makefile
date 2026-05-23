@@ -21,8 +21,8 @@ OBJECTS = $(SOURCES:.c=.o)
 
 all: $(TARGET_SERIAL) $(TARGET_OMP) $(TARGET_MPI)
 
-$(TARGET_SERIAL): $(OBJECTS)
-	$(CC) $(LDFLAGS) -o $@ preprocessor.c
+$(TARGET_SERIAL): preprocessor.c
+	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ preprocessor.c
 	@echo "✓ Serial preprocessor built: $@"
 
 $(TARGET_OMP): preprocessor.c
