@@ -66,12 +66,34 @@ class StageApply:
             info,
             text=(
                 "Backend: modules/analyzer_cuda -> libpreprocessor_cuda.so\n"
-                "GPU path: numeric column min/max reductions and min-max scaling\n"
-                "CPU path: CSV row preparation, type detection, and UI result assembly"
+                "Auto routing: CPU OpenMP for small numeric work, normal CUDA for large work,\n"
+                "and hybrid CUDA + CPU threads for larger work."
             ),
             style="Muted.TLabel",
             justify="left",
         ).pack(anchor="w")
+
+        routing = ttk.LabelFrame(self.frame, text="CUDA Routing", padding=8)
+        routing.pack(fill="x", padx=14, pady=(0, 6))
+        self._routing_mode = tk.StringVar(value="auto")
+        self._cpu_threshold = tk.StringVar(value="250000")
+        self._hybrid_threshold = tk.StringVar(value="700000")
+        self._cpu_threads = tk.StringVar(value=str(min(os.cpu_count() or 4, 8)))
+
+        ttk.Label(routing, text="Mode").grid(row=0, column=0, sticky="w", padx=(0, 6), pady=3)
+        ttk.Combobox(
+            routing,
+            textvariable=self._routing_mode,
+            values=("auto", "cpu", "normal", "hybrid"),
+            state="readonly",
+            width=10,
+        ).grid(row=0, column=1, sticky="w", padx=(0, 18), pady=3)
+        ttk.Label(routing, text="CPU threshold").grid(row=0, column=2, sticky="w", padx=(0, 6), pady=3)
+        ttk.Entry(routing, textvariable=self._cpu_threshold, width=12).grid(row=0, column=3, sticky="w", padx=(0, 18), pady=3)
+        ttk.Label(routing, text="Hybrid threshold").grid(row=0, column=4, sticky="w", padx=(0, 6), pady=3)
+        ttk.Entry(routing, textvariable=self._hybrid_threshold, width=12).grid(row=0, column=5, sticky="w", padx=(0, 18), pady=3)
+        ttk.Label(routing, text="CPU threads").grid(row=0, column=6, sticky="w", padx=(0, 6), pady=3)
+        ttk.Entry(routing, textvariable=self._cpu_threads, width=6).grid(row=0, column=7, sticky="w", pady=3)
 
         ttk.Separator(self.frame, orient="horizontal").pack(fill="x", padx=14, pady=(0, 10))
 
@@ -124,9 +146,15 @@ class StageApply:
 
         timing_cell = ttk.Frame(stats_frame)
         timing_cell.grid(row=0, column=2, padx=30, sticky="w")
-        ttk.Label(timing_cell, text="CUDA Time", font=theme.FONT_BOLD, foreground=theme.HIGHLIGHT).pack(anchor="w")
+        ttk.Label(timing_cell, text="Preprocess Time", font=theme.FONT_BOLD, foreground=theme.HIGHLIGHT).pack(anchor="w")
         self._timing_var = tk.StringVar(value="-")
         ttk.Label(timing_cell, textvariable=self._timing_var, font=theme.FONT_LARGE, foreground=theme.ACCENT).pack(anchor="w")
+        self._backend_var = tk.StringVar(value="-")
+        self._work_var = tk.StringVar(value="-")
+        self._cuda_work_var = tk.StringVar(value="-")
+        ttk.Label(timing_cell, textvariable=self._backend_var, style="Muted.TLabel").pack(anchor="w")
+        ttk.Label(timing_cell, textvariable=self._work_var, style="Muted.TLabel").pack(anchor="w")
+        ttk.Label(timing_cell, textvariable=self._cuda_work_var, style="Muted.TLabel").pack(anchor="w")
 
         preview_frame = ttk.LabelFrame(self.frame, text="Output Preview (first 20 rows)", padding=10)
         preview_frame.pack(fill="both", expand=True, **pad)
@@ -183,7 +211,14 @@ class StageApply:
             orig_rows = len(data)
             orig_cols = len(headers)
 
-            pipeline = PreprocessingPipeline(backend_type="cuda")
+            cuda_routing = {
+                "mode": self._routing_mode.get(),
+                "cpu_threshold": int(self._cpu_threshold.get() or 250000),
+                "hybrid_threshold": int(self._hybrid_threshold.get() or 700000),
+                "cpu_threads": int(self._cpu_threads.get() or min(os.cpu_count() or 4, 8)),
+            }
+
+            pipeline = PreprocessingPipeline(backend_type="cuda", cuda_routing=cuda_routing)
             t_start = time.perf_counter()
             data, headers, stats = pipeline.run_pipeline(data, headers, configs)
             t_elapsed = time.perf_counter() - t_start
@@ -199,6 +234,10 @@ class StageApply:
             self._after_rows.set(f"{len(data)} rows")
             self._after_cols.set(f"{len(headers)} columns")
             self._timing_var.set(f"{stats.get('c_processing_time_ms', t_elapsed * 1000):.1f} ms")
+            self._backend_var.set(f"Backend: {stats.get('cuda_backend_used', '-')}")
+            self._work_var.set(f"Numeric work: {stats.get('cuda_numeric_work', '-')}")
+            cuda_ms = stats.get("cuda_work_time_ms")
+            self._cuda_work_var.set(f"CUDA work: {cuda_ms:.2f} ms" if cuda_ms is not None else "CUDA work: -")
 
             self._refresh_preview(headers, data[:20])
             self._save_btn.configure(state="normal")
