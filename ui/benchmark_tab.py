@@ -61,7 +61,7 @@ class BenchmarkComparisonTab:
                   font=theme.FONT_TITLE, foreground=theme.HIGHLIGHT
                   ).pack(anchor="w", padx=14, pady=(12, 2))
         ttk.Label(self.frame,
-                  text="Compare performance metrics across Serial, OpenMP, and MPI backends.",
+                  text="Compare performance metrics across Serial, OpenMP, MPI, and CUDA backends.",
                   style="Muted.TLabel"
                   ).pack(anchor="w", padx=14, pady=(0, 10))
         ttk.Separator(self.frame, orient="horizontal").pack(fill="x", padx=14, pady=(0, 14))
@@ -143,6 +143,12 @@ class BenchmarkComparisonTab:
                 mpi = self._comparison.results["mpi"]
                 lines.append(f"MPI execution: {mpi.total_time*1000:.1f} ms "
                            f"(speedup: {mpi.speedup_vs_serial:.2f}x)")
+
+            if "cuda" in self._comparison.results:
+                cuda = self._comparison.results["cuda"]
+                lines.append(f"CUDA execution: {cuda.total_time*1000:.1f} ms "
+                           f"(speedup: {cuda.speedup_vs_serial:.2f}x, "
+                           f"device: {cuda.cuda_work_time*1000:.1f} ms)")
 
             summary = "\n".join(lines)
 

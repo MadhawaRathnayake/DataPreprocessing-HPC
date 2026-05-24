@@ -697,19 +697,39 @@ extern "C" PreprocessedData* preprocess_cuda_hybrid_standalone(
         rows[r].resize(num_cols);
     }
 
+    auto stage_start = std::chrono::high_resolution_clock::now();
     if (should_remove_duplicates) result->duplicates_found = remove_duplicates_exact(rows);
-    result->missing_filled = fill_missing_values(rows, (int)header_vec.size());
-    result->outliers_removed = apply_outliers(rows, header_vec, outlier_cfg);
-    result->columns_scaled = apply_gpu_scaling(rows, header_vec, scaling_cfg);
+    auto stage_stop = std::chrono::high_resolution_clock::now();
+    result->duplicates_time_ms = std::chrono::duration<double, std::milli>(stage_stop - stage_start).count();
 
+    stage_start = std::chrono::high_resolution_clock::now();
+    result->missing_filled = fill_missing_values(rows, (int)header_vec.size());
+    stage_stop = std::chrono::high_resolution_clock::now();
+    result->missing_time_ms = std::chrono::duration<double, std::milli>(stage_stop - stage_start).count();
+
+    stage_start = std::chrono::high_resolution_clock::now();
+    result->outliers_removed = apply_outliers(rows, header_vec, outlier_cfg);
+    stage_stop = std::chrono::high_resolution_clock::now();
+    result->outliers_time_ms = std::chrono::duration<double, std::milli>(stage_stop - stage_start).count();
+
+    stage_start = std::chrono::high_resolution_clock::now();
+    result->columns_scaled = apply_gpu_scaling(rows, header_vec, scaling_cfg);
+    stage_stop = std::chrono::high_resolution_clock::now();
+    result->scaling_time_ms = std::chrono::duration<double, std::milli>(stage_stop - stage_start).count();
+    result->cuda_work_time_ms = g_last_cuda_work_time_ms;
+
+    stage_start = std::chrono::high_resolution_clock::now();
     if (encoding_cfg) {
         result->columns_encoded = encoding_cfg->method == 1
             ? one_hot_encode_columns(rows, header_vec, encoding_cfg)
             : label_encode_columns(rows, header_vec, encoding_cfg);
     }
+    stage_stop = std::chrono::high_resolution_clock::now();
+    result->encoding_time_ms = std::chrono::duration<double, std::milli>(stage_stop - stage_start).count();
 
     result->num_rows = (int)rows.size();
     result->num_cols = (int)header_vec.size();
+    result->rows_removed = num_rows - result->num_rows;
     result->headers = (char**)calloc(result->num_cols, sizeof(char*));
     result->data = (char**)calloc(result->num_rows, sizeof(char*));
     if (!result->headers || !result->data) return result;
@@ -773,12 +793,16 @@ extern "C" char* preprocess_to_json(PreprocessedData *data) {
     char *json = (char*)malloc(768);
     if (!json) return NULL;
     snprintf(json, 768,
-        "{\"rows_after\":%d,\"duplicates_found\":%d,\"missing_filled\":%d,"
+        "{\"rows_after\":%d,\"rows_removed\":%d,\"duplicates_found\":%d,\"missing_filled\":%d,"
         "\"outliers_removed\":%d,\"columns_scaled\":%d,\"columns_encoded\":%d,"
-        "\"processing_time_ms\":%.2f}",
-        data->num_rows, data->duplicates_found, data->missing_filled,
+        "\"processing_time_ms\":%.2f,\"duplicates_time_ms\":%.2f,\"missing_time_ms\":%.2f,"
+        "\"outliers_time_ms\":%.2f,\"scaling_time_ms\":%.2f,\"encoding_time_ms\":%.2f,"
+        "\"cuda_work_time_ms\":%.2f}",
+        data->num_rows, data->rows_removed, data->duplicates_found, data->missing_filled,
         data->outliers_removed, data->columns_scaled, data->columns_encoded,
-        data->processing_time_ms);
+        data->processing_time_ms, data->duplicates_time_ms, data->missing_time_ms,
+        data->outliers_time_ms, data->scaling_time_ms, data->encoding_time_ms,
+        data->cuda_work_time_ms);
     return json;
 }
 

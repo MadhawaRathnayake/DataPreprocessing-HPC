@@ -175,9 +175,11 @@ class PreprocessingPipeline:
             # Record metrics from C preprocessing
             metrics = result_dict['metrics']
             self.metrics.record_duplicates(metrics['duplicates_found'])
+            self.metrics.record_missing(metrics['missing_filled'])
             self.metrics.record_outliers(metrics['outliers_removed'])
             self.metrics.record_scaling(metrics['columns_scaled'])
             self.metrics.record_encoding(metrics['columns_encoded'])
+            self.metrics.record_cuda_work_time(metrics.get('cuda_work_time_ms', 0) / 1000.0)
             
             # Record stage timings (converted to seconds for MetricsCollector)
             self.metrics.metrics.duplicates_time = metrics.get('duplicates_time_ms', 0) / 1000.0
@@ -194,7 +196,8 @@ class PreprocessingPipeline:
                 'final_shape': f"{result_dict['num_rows']} rows × {result_dict['num_cols']} columns",
                 'total_time': metrics['processing_time_ms'] / 1000.0,  # Convert ms to seconds
                 'metrics': self.metrics.get_metrics(),
-                'c_processing_time_ms': metrics['processing_time_ms']
+                'c_processing_time_ms': metrics['processing_time_ms'],
+                'cuda_work_time_ms': metrics.get('cuda_work_time_ms', 0)
             }
             
             self.logger.info(f"Pipeline COMPLETE: {result_dict['num_rows']} rows × {result_dict['num_cols']} columns")

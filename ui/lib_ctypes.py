@@ -184,12 +184,19 @@ PreprocessedDataCuda._fields_ = [
     ("num_rows", c_int),
     ("num_cols", c_int),
     ("headers", POINTER(c_char_p)),
+    ("rows_removed", c_int),
     ("duplicates_found", c_int),
     ("missing_filled", c_int),
     ("outliers_removed", c_int),
     ("columns_scaled", c_int),
     ("columns_encoded", c_int),
     ("processing_time_ms", c_double),
+    ("duplicates_time_ms", c_double),
+    ("missing_time_ms", c_double),
+    ("outliers_time_ms", c_double),
+    ("scaling_time_ms", c_double),
+    ("encoding_time_ms", c_double),
+    ("cuda_work_time_ms", c_double),
 ]
 
 
@@ -514,7 +521,8 @@ def c_preprocessed_data_to_python(c_result):
         'headers': headers,
         'num_rows': result.num_rows,
         'num_cols': result.num_cols,
-        'metrics': {
+            'metrics': {
+            'rows_removed': getattr(result, 'rows_removed', 0),
             'duplicates_found': result.duplicates_found,
             'missing_filled': result.missing_filled,
             'outliers_removed': result.outliers_removed,
@@ -526,6 +534,7 @@ def c_preprocessed_data_to_python(c_result):
             'outliers_time_ms': getattr(result, 'outliers_time_ms', 0),
             'scaling_time_ms': getattr(result, 'scaling_time_ms', 0),
             'encoding_time_ms': getattr(result, 'encoding_time_ms', 0),
+            'cuda_work_time_ms': getattr(result, 'cuda_work_time_ms', 0),
         }
     }
 

@@ -198,7 +198,12 @@ class StageApply:
             self._before_cols.set(f"{orig_cols} columns")
             self._after_rows.set(f"{len(data)} rows")
             self._after_cols.set(f"{len(headers)} columns")
-            self._timing_var.set(f"{stats.get('c_processing_time_ms', t_elapsed * 1000):.1f} ms")
+            device_ms = stats.get("cuda_work_time_ms", 0)
+            total_ms = stats.get("c_processing_time_ms", t_elapsed * 1000)
+            if device_ms:
+                self._timing_var.set(f"{total_ms:.1f} ms ({device_ms:.1f} ms GPU)")
+            else:
+                self._timing_var.set(f"{total_ms:.1f} ms")
 
             self._refresh_preview(headers, data[:20])
             self._save_btn.configure(state="normal")

@@ -30,12 +30,19 @@ typedef struct {
     int num_rows;
     int num_cols;
     char **headers;
+    int rows_removed;
     int duplicates_found;
     int missing_filled;
     int outliers_removed;
     int columns_scaled;
     int columns_encoded;
     double processing_time_ms;
+    double duplicates_time_ms;
+    double missing_time_ms;
+    double outliers_time_ms;
+    double scaling_time_ms;
+    double encoding_time_ms;
+    double cuda_work_time_ms;
 } PreprocessedData;
 
 PreprocessedData* preprocess_cuda(

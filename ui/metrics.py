@@ -15,7 +15,7 @@ class PipelineMetrics:
     """Performance metrics for a single pipeline execution"""
     
     # Identification
-    backend: str  # "serial", "openmp", "mpi"
+    backend: str  # "serial", "openmp", "mpi", "cuda"
     timestamp: str = field(default_factory=lambda: datetime.now().isoformat())
     
     # Input data
@@ -38,6 +38,7 @@ class PipelineMetrics:
     num_threads: Optional[int] = None  # For OpenMP
     num_processes: Optional[int] = None  # For MPI
     num_cores: Optional[int] = None  # CPU count
+    cuda_work_time: float = 0.0  # CUDA kernel/device work time in seconds
     
     # Memory usage (in MB)
     memory_mb: float = 0.0
@@ -96,6 +97,7 @@ class MetricsCollector:
         """Record output data dimensions"""
         self.metrics.output_rows = rows
         self.metrics.output_columns = columns
+        self.metrics.rows_removed = self.metrics.input_rows - rows
         
     def set_system_config(self, num_threads: Optional[int] = None, 
                          num_processes: Optional[int] = None, 
@@ -162,6 +164,10 @@ class MetricsCollector:
     def record_encoding(self, columns: int):
         """Record encoding statistics"""
         self.metrics.columns_encoded = columns
+
+    def record_cuda_work_time(self, seconds: float):
+        """Record CUDA device work time."""
+        self.metrics.cuda_work_time = seconds
     
     def get_metrics(self) -> PipelineMetrics:
         """Get collected metrics"""
@@ -211,7 +217,7 @@ class BenchmarkComparison:
             "BACKEND", "TOTAL TIME", "ROWS IN", "ROWS OUT", "ROWS REMOVED", "SPEEDUP"))
         lines.append("-" * 120)
         
-        for backend in ["serial", "openmp", "mpi"]:
+        for backend in ["serial", "openmp", "mpi", "cuda"]:
             if backend not in self.results:
                 continue
             
@@ -236,7 +242,7 @@ class BenchmarkComparison:
             "BACKEND", "DUPLICATES", "MISSING", "OUTLIERS", "SCALING", "ENCODING"))
         lines.append("-" * 120)
         
-        for backend in ["serial", "openmp", "mpi"]:
+        for backend in ["serial", "openmp", "mpi", "cuda"]:
             if backend not in self.results:
                 continue
             
@@ -255,7 +261,7 @@ class BenchmarkComparison:
         lines.append("SYSTEM CONFIGURATION")
         lines.append("=" * 120)
         
-        for backend in ["serial", "openmp", "mpi"]:
+        for backend in ["serial", "openmp", "mpi", "cuda"]:
             if backend not in self.results:
                 continue
             
@@ -267,6 +273,8 @@ class BenchmarkComparison:
                 lines.append(f"  Processes: {m.num_processes}")
             if m.num_cores:
                 lines.append(f"  CPU Cores: {m.num_cores}")
+            if backend == "cuda":
+                lines.append(f"  CUDA Work Time: {m.cuda_work_time * 1000:.2f} ms")
             lines.append(f"  Efficiency: {m.efficiency:.1f}%")
         
         # Performance Analysis
@@ -293,6 +301,15 @@ class BenchmarkComparison:
             lines.append(f"  Time Saved: {(serial.total_time - mpi.total_time)*1000:.1f} ms")
             if mpi.num_processes:
                 lines.append(f"  Per-process Efficiency: {(speedup / mpi.num_processes * 100):.1f}%")
+
+        if "serial" in self.results and "cuda" in self.results:
+            serial = self.results["serial"]
+            cuda = self.results["cuda"]
+            speedup = cuda.speedup_vs_serial
+            lines.append(f"\nCUDA vs Serial:")
+            lines.append(f"  Speedup: {speedup:.2f}x")
+            lines.append(f"  Time Saved: {(serial.total_time - cuda.total_time)*1000:.1f} ms")
+            lines.append(f"  CUDA Device Work: {cuda.cuda_work_time * 1000:.2f} ms")
         
         lines.append("\n" + "=" * 120 + "\n")
         return "\n".join(lines)
@@ -312,11 +329,11 @@ class BenchmarkComparison:
         # Header
         headers = ["Backend", "Total Time (ms)", "Input Rows", "Output Rows", "Rows Removed",
                    "Duplicates", "Missing Filled", "Outliers", "Columns Scaled", "Columns Encoded",
-                   "Threads/Processes", "Speedup vs Serial", "Efficiency %"]
+                   "Threads/Processes", "CUDA Work Time (ms)", "Speedup vs Serial", "Efficiency %"]
         lines.append(",".join(headers))
         
         # Data rows
-        for backend in ["serial", "openmp", "mpi"]:
+        for backend in ["serial", "openmp", "mpi", "cuda"]:
             if backend not in self.results:
                 continue
             
@@ -336,6 +353,7 @@ class BenchmarkComparison:
                 str(m.columns_scaled),
                 str(m.columns_encoded),
                 str(threads),
+                f"{m.cuda_work_time*1000:.2f}" if backend == "cuda" else "-",
                 speedup,
                 f"{m.efficiency:.1f}%"
             ]
