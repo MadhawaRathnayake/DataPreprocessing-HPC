@@ -30,6 +30,7 @@ class StageApply:
         self._get_configs = get_stage_configs_cb
         self._processed_data = None
         self._processed_headers = None
+        self._sm_count_var = tk.IntVar(value=1)
         self.frame = ttk.Frame(parent_frame)
         self._build()
 
@@ -86,6 +87,23 @@ class StageApply:
             **{k: v for k, v in theme.TEXT_WIDGET_CFG.items() if k not in ("padx", "pady", "relief")},
         )
         self._summary_text.pack(fill="x")
+
+        benchmark_frame = ttk.LabelFrame(self.frame, text="Benchmark Settings", padding=10)
+        benchmark_frame.pack(fill="x", **pad)
+        ttk.Label(benchmark_frame, text="CUDA SM count").grid(row=0, column=0, sticky="w", padx=(0, 8))
+        ttk.Spinbox(
+            benchmark_frame,
+            from_=1,
+            to=1024,
+            width=8,
+            textvariable=self._sm_count_var,
+        ).grid(row=0, column=1, sticky="w")
+        ttk.Label(
+            benchmark_frame,
+            text="Used only for benchmark efficiency: speedup / SM count.",
+            style="Muted.TLabel",
+        ).grid(row=0, column=2, sticky="w", padx=(12, 0))
+        benchmark_frame.columnconfigure(2, weight=1)
 
         btn_frame = ttk.Frame(self.frame)
         btn_frame.pack(fill="x", padx=14, pady=8)
@@ -159,6 +177,7 @@ class StageApply:
                 lines.append(f"  - {name}: {action}")
             lines.append("")
             lines.append("Current CUDA backend applies GPU min-max scaling to selected numeric columns.")
+            lines.append(f"Benchmark SM count: {self._get_sm_count()}")
         except Exception:
             lines = ["  (Import a dataset and configure stages first)"]
 
@@ -176,6 +195,7 @@ class StageApply:
         self.app.root.update()
 
         try:
+            sm_count = self._get_sm_count()
             configs = self._get_configs()
             headers = list(self.app.csv_data["headers"])
             data = [list(row) for row in self.app.csv_data["data"]]
@@ -183,7 +203,7 @@ class StageApply:
             orig_rows = len(data)
             orig_cols = len(headers)
 
-            pipeline = PreprocessingPipeline(backend_type="cuda")
+            pipeline = PreprocessingPipeline(backend_type="cuda", cuda_sm_count=sm_count)
             t_start = time.perf_counter()
             data, headers, stats = pipeline.run_pipeline(data, headers, configs)
             t_elapsed = time.perf_counter() - t_start
@@ -215,13 +235,25 @@ class StageApply:
                     pass
 
             self.app.set_status(
-                f"CUDA pipeline complete - {len(data)} rows, {len(headers)} columns, {t_elapsed:.3f}s"
+                f"CUDA pipeline complete - {len(data)} rows, {len(headers)} columns, "
+                f"{t_elapsed:.3f}s, SM count {sm_count}"
             )
         except Exception as e:
             messagebox.showerror("CUDA Pipeline Error", str(e))
             self.app.set_status("CUDA pipeline error")
             import traceback
             traceback.print_exc()
+
+    def _get_sm_count(self):
+        try:
+            sm_count = int(self._sm_count_var.get())
+        except (tk.TclError, ValueError):
+            sm_count = 1
+
+        if sm_count < 1:
+            sm_count = 1
+        self._sm_count_var.set(sm_count)
+        return sm_count
 
     def _save_csv(self):
         if not self._processed_data:

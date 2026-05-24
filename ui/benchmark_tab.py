@@ -146,8 +146,10 @@ class BenchmarkComparisonTab:
 
             if "cuda" in self._comparison.results:
                 cuda = self._comparison.results["cuda"]
+                sm_text = f", SMs: {cuda.cuda_sm_count}" if cuda.cuda_sm_count else ""
                 lines.append(f"CUDA execution: {cuda.total_time*1000:.1f} ms "
                            f"(speedup: {cuda.speedup_vs_serial:.2f}x, "
+                           f"efficiency: {cuda.efficiency:.1f}%{sm_text}, "
                            f"device: {cuda.cuda_work_time*1000:.1f} ms)")
 
             summary = "\n".join(lines)

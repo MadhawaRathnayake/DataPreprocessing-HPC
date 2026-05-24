@@ -29,7 +29,14 @@ class PreprocessingPipeline:
     All transformations are performed in compiled C, bypassing Python GIL.
     """
     
-    def __init__(self, backend_lib=None, backend_type="serial", num_threads=1, num_processes=1):
+    def __init__(
+        self,
+        backend_lib=None,
+        backend_type="serial",
+        num_threads=1,
+        num_processes=1,
+        cuda_sm_count=None,
+    ):
         """
         Parameters:
         -----------
@@ -40,16 +47,21 @@ class PreprocessingPipeline:
             For OpenMP backend, number of threads to use
         num_processes : int
             For MPI backend, number of processes to use
+        cuda_sm_count : int, optional
+            For CUDA backend, number of streaming multiprocessors used for
+            benchmark efficiency only.
         """
         self.logger = get_logger(f"PreprocessingPipeline.{backend_type}")
         self.backend_type = backend_type
         self.num_threads = num_threads
         self.num_processes = num_processes
+        self.cuda_sm_count = cuda_sm_count
         self.metrics = MetricsCollector(backend_type)
         self.metrics.set_system_config(
             num_threads=num_threads if backend_type == "openmp" else None,
             num_processes=num_processes if backend_type == "mpi" else None,
-            num_cores=os.cpu_count()
+            num_cores=os.cpu_count(),
+            cuda_sm_count=cuda_sm_count if backend_type == "cuda" else None,
         )
         
         # Load C preprocessing library
@@ -59,7 +71,11 @@ class PreprocessingPipeline:
         if not self.lib.is_loaded():
             raise RuntimeError(f"Failed to load preprocessor library for {backend_type}")
         
-        self.logger.info(f"Initialized {backend_type.upper()} backend using C library (threads={num_threads}, processes={num_processes}, cores={os.cpu_count()})")
+        self.logger.info(
+            f"Initialized {backend_type.upper()} backend using C library "
+            f"(threads={num_threads}, processes={num_processes}, "
+            f"cuda_sm_count={cuda_sm_count}, cores={os.cpu_count()})"
+        )
     
     def run_pipeline(self, data: List[List[str]], headers: List[str], 
                     configs: List[Dict]) -> Tuple[List[List[str]], List[str], Dict]:

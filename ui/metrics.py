@@ -38,6 +38,7 @@ class PipelineMetrics:
     num_threads: Optional[int] = None  # For OpenMP
     num_processes: Optional[int] = None  # For MPI
     num_cores: Optional[int] = None  # CPU count
+    cuda_sm_count: Optional[int] = None  # For CUDA efficiency calculation
     cuda_work_time: float = 0.0  # CUDA kernel/device work time in seconds
     
     # Memory usage (in MB)
@@ -101,11 +102,13 @@ class MetricsCollector:
         
     def set_system_config(self, num_threads: Optional[int] = None, 
                          num_processes: Optional[int] = None, 
-                         num_cores: Optional[int] = None):
+                         num_cores: Optional[int] = None,
+                         cuda_sm_count: Optional[int] = None):
         """Record system configuration"""
         self.metrics.num_threads = num_threads
         self.metrics.num_processes = num_processes
         self.metrics.num_cores = num_cores
+        self.metrics.cuda_sm_count = cuda_sm_count
         
     def start_stage(self, stage_name: str):
         """Start timing a processing stage"""
@@ -201,6 +204,8 @@ class BenchmarkComparison:
                     metrics.efficiency = (metrics.speedup_vs_serial / metrics.num_threads) * 100
                 elif metrics.num_processes:
                     metrics.efficiency = (metrics.speedup_vs_serial / metrics.num_processes) * 100
+                elif backend == "cuda" and metrics.cuda_sm_count:
+                    metrics.efficiency = (metrics.speedup_vs_serial / metrics.cuda_sm_count) * 100
     
     def get_comparison_table(self) -> str:
         """Generate text comparison table"""
@@ -274,6 +279,8 @@ class BenchmarkComparison:
             if m.num_cores:
                 lines.append(f"  CPU Cores: {m.num_cores}")
             if backend == "cuda":
+                if m.cuda_sm_count:
+                    lines.append(f"  SM Count: {m.cuda_sm_count}")
                 lines.append(f"  CUDA Work Time: {m.cuda_work_time * 1000:.2f} ms")
             lines.append(f"  Efficiency: {m.efficiency:.1f}%")
         
@@ -310,6 +317,8 @@ class BenchmarkComparison:
             lines.append(f"  Speedup: {speedup:.2f}x")
             lines.append(f"  Time Saved: {(serial.total_time - cuda.total_time)*1000:.1f} ms")
             lines.append(f"  CUDA Device Work: {cuda.cuda_work_time * 1000:.2f} ms")
+            if cuda.cuda_sm_count:
+                lines.append(f"  Per-SM Efficiency: {(speedup / cuda.cuda_sm_count * 100):.1f}%")
         
         lines.append("\n" + "=" * 120 + "\n")
         return "\n".join(lines)
@@ -329,7 +338,7 @@ class BenchmarkComparison:
         # Header
         headers = ["Backend", "Total Time (ms)", "Input Rows", "Output Rows", "Rows Removed",
                    "Duplicates", "Missing Filled", "Outliers", "Columns Scaled", "Columns Encoded",
-                   "Threads/Processes", "CUDA Work Time (ms)", "Speedup vs Serial", "Efficiency %"]
+                   "Threads/Processes/SMs", "CUDA Work Time (ms)", "Speedup vs Serial", "Efficiency %"]
         lines.append(",".join(headers))
         
         # Data rows
@@ -338,7 +347,7 @@ class BenchmarkComparison:
                 continue
             
             m = self.results[backend]
-            threads = m.num_threads or m.num_processes or "-"
+            workers = m.num_threads or m.num_processes or m.cuda_sm_count or "-"
             speedup = f"{m.speedup_vs_serial:.2f}x"
             
             row = [
@@ -352,7 +361,7 @@ class BenchmarkComparison:
                 str(m.outliers_detected),
                 str(m.columns_scaled),
                 str(m.columns_encoded),
-                str(threads),
+                str(workers),
                 f"{m.cuda_work_time*1000:.2f}" if backend == "cuda" else "-",
                 speedup,
                 f"{m.efficiency:.1f}%"
